@@ -11,6 +11,7 @@ st.markdown("""
     .score-big { font-size: 35px; font-weight: 900; color: #ff4b4b; text-align: center; }
     .vs-text { text-align: center; color: #888; font-size: 14px; }
     .league-header { color: #888; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+    .date-text { color: #aaa; font-size: 14px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -21,7 +22,7 @@ def load_data():
     df = pd.read_csv(CSV_URL)
     df.columns = df.columns.str.strip()
     
-    # Skapa datum-objekt och en snygg Datum-sträng
+    # Skapa datum-objekt
     if 'response.fixture.date' in df.columns:
         df['dt_object'] = pd.to_datetime(df['response.fixture.date']).dt.tz_localize(None)
         df['Datum'] = df['dt_object'].dt.strftime('%d %b %Y %H:%M')
@@ -71,34 +72,4 @@ try:
                             st.markdown(f"<div class='score-big'>{int(h_goals)} - {int(match['response.goals.away'])}</div>", unsafe_allow_html=True)
                         else:
                             tid = match['Datum'].split(' ')[3] if ' ' in str(match['Datum']) else "--:--"
-                            st.markdown(f"<div class='vs-text'>VS<br>{tid}</div>", unsafe_allow_html=True)
-                    with col4:
-                        st.write(f"**{match['response.teams.away.name']}**")
-                    with col5:
-                        btn_key = f"btn_{i}_{match['response.teams.home.name'][:3]}"
-                        if st.button("Analys", key=btn_key):
-                            st.session_state.selected_match = match
-                            st.session_state.page = 'details'
-                            st.rerun()
-                    st.divider()
-        else:
-            st.info("Inga matcher hittades.")
-
-    # --- SIDA 2: ANALYSVY ---
-    elif st.session_state.page == 'details':
-        m = st.session_state.selected_match
-        
-        if st.button("⬅️ Tillbaka"):
-            st.session_state.page = 'list'
-            st.rerun()
-            
-        st.markdown(f"<div class='league-header'>{m['response.league.name']} | {m['response.league.country']}</div>", unsafe_allow_html=True)
-        st.divider()
-
-        # Scoreboard
-        c1, c2, c3 = st.columns([2, 1, 2])
-        with c1:
-            st.image(m['response.teams.home.logo'], width=100)
-            st.subheader(m['response.teams.home.name'])
-        with c2:
-            if m['spelad'] and pd.notna(m.get('response.
+                            st.markdown(f"<div class='vs-text'>VS<br
