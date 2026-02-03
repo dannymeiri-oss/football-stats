@@ -11,7 +11,6 @@ st.markdown("""
     .score-big { font-size: 35px; font-weight: 900; color: #ff4b4b; text-align: center; }
     .vs-text { text-align: center; color: #888; font-size: 14px; }
     .league-header { color: #888; font-size: 12px; font-weight: bold; text-transform: uppercase; }
-    .h2h-row { background-color: #1e1e1e; padding: 10px; border-radius: 5px; margin-bottom: 5px; border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -21,11 +20,9 @@ CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYB9eRz1kLOPX8YewpfS
 def load_data():
     df = pd.read_csv(CSV_URL)
     df.columns = df.columns.str.strip()
-    
     if 'response.fixture.date' in df.columns:
         df['dt_object'] = pd.to_datetime(df['response.fixture.date']).dt.tz_localize(None)
         df['Datum'] = df['dt_object'].dt.strftime('%d %b %Y %H:%M')
-    
     now = datetime.now()
     goal_col = 'response.goals.home'
     if goal_col in df.columns:
@@ -46,7 +43,6 @@ try:
     # --- SIDA 1: LISTVY ---
     if st.session_state.page == 'list':
         st.title("🏆 Matchcenter")
-        
         sida = st.sidebar.radio("Visa matcher:", ["Kommande", "Historik"])
         search = st.sidebar.text_input("Sök lag...")
 
@@ -56,11 +52,9 @@ try:
 
         if not df_view.empty:
             df_view = df_view.sort_values(by='dt_object', ascending=(sida == "Kommande"))
-            
             for i, match in df_view.iterrows():
                 with st.container():
                     col1, col2, col3, col4, col5 = st.columns([0.8, 3, 2, 3, 1.5])
-                    
                     with col1:
                         st.image(match['response.league.logo'], width=40)
                     with col2:
@@ -75,19 +69,18 @@ try:
                     with col4:
                         st.write(f"**{match['response.teams.away.name']}**")
                     with col5:
-                        btn_key = f"analys_btn_{i}_{match['response.teams.home.name'][:3]}"
+                        btn_key = f"btn_{i}_{match['response.teams.home.name'][:3]}"
                         if st.button("Analys", key=btn_key):
                             st.session_state.selected_match = match
                             st.session_state.page = 'details'
                             st.rerun()
                     st.divider()
         else:
-            st.info(f"Inga matcher hittades i kategorin '{sida}'.")
+            st.info(f"Inga matcher hittades.")
 
     # --- SIDA 2: ANALYSVY ---
     elif st.session_state.page == 'details':
         m = st.session_state.selected_match
-        
         if st.button("⬅️ Tillbaka"):
             st.session_state.page = 'list'
             st.rerun()
@@ -95,7 +88,6 @@ try:
         st.markdown(f"<div class='league-header'>{m['response.league.name']} | {m['response.league.country']}</div>", unsafe_allow_html=True)
         st.divider()
 
-        # Scoreboard Header
         c1, c2, c3 = st.columns([2, 1, 2])
         with c1:
             st.image(m['response.teams.home.logo'], width=100)
@@ -111,20 +103,42 @@ try:
             st.subheader(m['response.teams.away.name'])
 
         st.divider()
-        
         t1, t2, t3 = st.tabs(["📊 Statistik", "🔄 Inbördes", "📋 Info"])
         
         with t1:
             st.subheader("Matchanalys")
-            st.info("Här kan vi lägga till mer statistik sen.")
+            st.info("Här lägger vi till statistik sen.")
 
         with t2:
-            st.subheader(f"Tidigare möten: {m['response.teams.home.name']} vs {m['response.teams.away.name']}")
-            
-            # LOGIK FÖR H2H
+            st.subheader("Inbördes möten")
             t1_name = m['response.teams.home.name']
             t2_name = m['response.teams.away.name']
             
-            # Hitta matcher där båda lagen deltog (oavsett hemma/borta) och som är spelade
+            # H2H-logik med säkrade parenteser
             h2h_df = df_raw[
-                (df_raw['spelad'] == True)
+                (df_raw['spelad'] == True) & 
+                (
+                    ((df_raw['response.teams.home.name'] == t1_name) & (df_raw['response.teams.away.name'] == t2_name)) | 
+                    ((df_raw['response.teams.home.name'] == t2_name) & (df_raw['response.teams.away.name'] == t1_name))
+                )
+            ].sort_values(by='dt_object', ascending=False)
+
+            if not h2h_df.empty:
+                for _, h_match in h2h_df.iterrows():
+                    col_d, col_m, col_r = st.columns([1, 3, 1])
+                    with col_d:
+                        st.write(h_match['Datum'].split(' ')[0])
+                    with col_m:
+                        st.write(f"{h_match['response.teams.home.name']} - {h_match['response.teams.away.name']}")
+                    with col_r:
+                        st.markdown(f"**{int(h_match['response.goals.home'])} - {int(h_match['response.goals.away'])}**")
+                    st.divider()
+            else:
+                st.write("Inga tidigare möten hittades.")
+
+        with t3:
+            st.write(f"**Arena:** {m.get('response.fixture.venue.name', 'N/A')}")
+            st.write(f"**Domare:** {m.get('response.fixture.referee', 'N/A')}")
+
+except Exception as e:
+    st.error(f"Ett tekniskt fel uppstod: {e}")
