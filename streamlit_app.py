@@ -11,6 +11,7 @@ st.markdown("""
     .score-big { font-size: 35px; font-weight: 900; color: #ff4b4b; text-align: center; }
     .vs-text { text-align: center; color: #888; font-size: 14px; }
     .league-header { color: #888; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+    .h2h-row { background-color: #1e1e1e; padding: 10px; border-radius: 5px; margin-bottom: 5px; border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -62,10 +63,8 @@ try:
                     
                     with col1:
                         st.image(match['response.league.logo'], width=40)
-                    
                     with col2:
-                        st.write(f"**{match['response.teams.home.name']}**") # Säker textvisning
-                    
+                        st.write(f"**{match['response.teams.home.name']}**")
                     with col3:
                         h_goals = match.get('response.goals.home')
                         if pd.notna(h_goals) and str(h_goals).strip() != "":
@@ -73,12 +72,9 @@ try:
                         else:
                             tid = match['Datum'].split(' ')[3] if ' ' in str(match['Datum']) else "--:--"
                             st.markdown(f"<div class='vs-text'>VS<br>{tid}</div>", unsafe_allow_html=True)
-                    
                     with col4:
-                        st.write(f"**{match['response.teams.away.name']}**") # Säker textvisning
-                    
+                        st.write(f"**{match['response.teams.away.name']}**")
                     with col5:
-                        # Helt unikt ID för varje knapp
                         btn_key = f"analys_btn_{i}_{match['response.teams.home.name'][:3]}"
                         if st.button("Analys", key=btn_key):
                             st.session_state.selected_match = match
@@ -88,7 +84,7 @@ try:
         else:
             st.info(f"Inga matcher hittades i kategorin '{sida}'.")
 
-    # --- SIDA 2: ANALYSVY (REN) ---
+    # --- SIDA 2: ANALYSVY ---
     elif st.session_state.page == 'details':
         m = st.session_state.selected_match
         
@@ -116,14 +112,19 @@ try:
 
         st.divider()
         
-        # Flikar för ny data
         t1, t2, t3 = st.tabs(["📊 Statistik", "🔄 Inbördes", "📋 Info"])
+        
         with t1:
             st.subheader("Matchanalys")
-            st.info("Sidan är rensad och klar. Vad ska vi lägga till först?")
-        with t3:
-            st.write(f"**Arena:** {m.get('response.fixture.venue.name', 'N/A')}")
-            st.write(f"**Domare:** {m.get('response.fixture.referee', 'Ej angiven')}")
+            st.info("Här kan vi lägga till mer statistik sen.")
 
-except Exception as e:
-    st.error(f"Ett tekniskt fel uppstod: {e}")
+        with t2:
+            st.subheader(f"Tidigare möten: {m['response.teams.home.name']} vs {m['response.teams.away.name']}")
+            
+            # LOGIK FÖR H2H
+            t1_name = m['response.teams.home.name']
+            t2_name = m['response.teams.away.name']
+            
+            # Hitta matcher där båda lagen deltog (oavsett hemma/borta) och som är spelade
+            h2h_df = df_raw[
+                (df_raw['spelad'] == True)
