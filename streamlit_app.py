@@ -6,17 +6,23 @@ import traceback
 # 1. Grundinställningar
 st.set_page_config(page_title="Football Stats Pro", layout="wide")
 
-# 2. CSS för det visuella
+# 2. CSS för det visuella gränssnittet
 st.markdown("""
     <style>
-    .score-big { font-size: 35px; font-weight: 900; color: #ff4b4b; text-align: center; }
+    .score-big { font-size: 35px; font-weight: 900; color: #ff4b4b; text-align: center; margin: 0; }
     .vs-text { text-align: center; color: #888; font-size: 14px; }
     .league-header { color: #888; font-size: 12px; font-weight: bold; text-transform: uppercase; }
-    .date-text { color: #aaa; font-size: 14px; font-weight: bold; }
-    .meta-small { color: #666; font-size: 12px; }
-    .card { background: #fff; padding: 12px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .date-text { color: #aaa; font-size: 13px; font-weight: bold; }
+    .card { 
+        background: #1e1e1e; 
+        padding: 15px; 
+        border-radius: 10px; 
+        border: 1px solid #333; 
+        margin-bottom: 10px;
+    }
+    .team-name-list { font-size: 16px; font-weight: bold; color: white; }
     </style>
-    "", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYB9eRz1kLOPX8YewpfSh5KuZQQ8AoKsfkxSmNutW5adKPMFN1AvLGq3FSVw7ZXwqMYZJVkFIPIO-g/pub?gid=0&single=true&output=csv"
 
@@ -24,49 +30,34 @@ CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYB9eRz1kLOPX8YewpfS
 def load_data():
     try:
         df = pd.read_csv(CSV_URL)
-    except Exception as e:
-        # Returnera tom df — fel visas i appen
-        return pd.DataFrame({"__load_error__": [str(e)]})
-
-    # Rensa kolumnnamn
-    df.columns = df.columns.str.strip()
-
-    # Datum: skapa dt_object om möjligt
-    if 'response.fixture.date' in df.columns:
-        dt = pd.to_datetime(df['response.fixture.date'], errors='coerce')
-        # Försök ta bort timezone om någon finns
-        try:
-            dt = dt.dt.tz_localize(None)
-        except Exception:
+        df.columns = df.columns.str.strip()
+        
+        # Datumhantering
+        if 'response.fixture.date' in df.columns:
+            dt = pd.to_datetime(df['response.fixture.date'], errors='coerce')
             try:
-                dt = dt.dt.tz_convert(None)
-            except Exception:
-                # Om det fortfarande failar, behåll som är (coerce -> NaT okej)
-                pass
-        df['dt_object'] = dt
-        df['Datum'] = dt.dt.strftime('%d %b %Y %H:%M')
-    else:
-        df['dt_object'] = pd.NaT
-        df['Datum'] = ""
-
-    # Bestäm om matchen är spelad
-    now = datetime.now()
-    goal_col = 'response.goals.home'
-    if goal_col in df.columns:
-        goals_numeric = pd.to_numeric(df[goal_col], errors='coerce')
-        # Om vi har dt_object, använd både mål och datum; annars basera på mål
-        if 'dt_object' in df.columns and not df['dt_object'].isna().all():
-            df['spelad'] = (~goals_numeric.isna()) | (df['dt_object'] < now)
+                dt = dt.dt.tz_localize(None)
+            except:
+                try: dt = dt.dt.tz_convert(None)
+                except: pass
+            df['dt_object'] = dt
+            df['Datum'] = dt.dt.strftime('%d %b %Y %H:%M')
         else:
-            df['spelad'] = ~goals_numeric.isna()
-    else:
-        # Om inga mål-kolumner finns, default till att kolla datum (om finns)
-        if 'dt_object' in df.columns:
+            df['dt_object'] = pd.NaT
+            df['Datum'] = ""
+
+        # Logik för spelad/kommande
+        now = datetime.now()
+        goal_col = 'response.goals.home'
+        if goal_col in df.columns:
+            goals_numeric = pd.to_numeric(df[goal_col], errors='coerce')
+            df['spelad'] = (goals_numeric.notna()) | (df['dt_object'] < now)
+        else:
             df['spelad'] = df['dt_object'] < now
-        else:
-            df['spelad'] = False
-
-    return df
+            
+        return df
+    except Exception as e:
+        return pd.DataFrame({"__load_error__": [str(e)]})
 
 def go_back():
     st.session_state.page = 'list'
@@ -75,125 +66,117 @@ def go_back():
 try:
     df_raw = load_data()
 
-    # Hantera laddningsfel
     if '__load_error__' in df_raw.columns:
-        st.title("🏆 Matchcenter")
-        st.error(f"Fel vid inläsning av data: {df_raw['__load_error__'].iat[0]}")
+        st.error(f"Kunde inte ladda data: {df_raw['__load_error__'].iat[0]}")
         st.stop()
 
     if 'page' not in st.session_state:
         st.session_state.page = 'list'
-    if 'selected_match' not in st.session_state:
-        st.session_state.selected_match = None
 
     # --- SIDA 1: LISTVY ---
     if st.session_state.page == 'list':
         st.title("🏆 Matchcenter")
-        # Sidopanel-inställningar
-        st.sidebar.header("Filter")
+        
         sida = st.sidebar.radio("Visa matcher:", ["Kommande", "Historik"])
         search = st.sidebar.text_input("Sök lag...")
-        league_filter = st.sidebar.text_input("Filtrera liga (valfritt)")
+        league_filter = st.sidebar.text_input("Filtrera liga")
 
         df_view = df_raw[df_raw['spelad'] == (sida == "Historik")].copy()
 
         if league_filter:
-            df_view = df_view[df_view.astype(str).apply(lambda col: col.str.contains(league_filter, case=False, na=False)).any(axis=1)]
-
+            df_view = df_view[df_view['response.league.name'].str.contains(league_filter, case=False, na=False)]
         if search:
-            # Sök i alla kolumner (str) — robust mot NaN
-            mask = df_view.apply(lambda row: row.astype(str).str.contains(search, case=False, na=False).any(), axis=1)
+            mask = df_view.apply(lambda row: row.astype(str).str.contains(search, case=False).any(), axis=1)
             df_view = df_view[mask]
 
         if df_view.empty:
-            st.info("Inga matcher att visa.")
+            st.info("Inga matcher matchar din sökning.")
         else:
             df_view = df_view.sort_values(by='dt_object', ascending=(sida == "Kommande"))
             for i, match in df_view.iterrows():
-                with st.container():
-                    st.markdown('<div class="card">', unsafe_allow_html=True)
-                    col1, col2, col3, col4, col5 = st.columns([0.8, 3, 2, 3, 1.5])
-                    # League logo
-                    with col1:
-                        logo = match.get('response.league.logo') if 'response.league.logo' in match.index else None
-                        if pd.notna(logo) and str(logo).strip() != "":
-                            st.image(logo, width=40)
-                        else:
-                            st.write("")  # placeholder
-                    # Home team
-                    with col2:
-                        home_name = match.get('response.teams.home.name', '') if 'response.teams.home.name' in match.index else ''
-                        away_name = match.get('response.teams.away.name', '') if 'response.teams.away.name' in match.index else ''
-                        st.write(f"**{home_name}**")
-                        st.markdown(f"<div class='league-header'>{match.get('response.league.name','')}</div>", unsafe_allow_html=True)
-                    # Score or time
-                    with col3:
-                        h_goals = match.get('response.goals.home') if 'response.goals.home' in match.index else None
-                        a_goals = match.get('response.goals.away') if 'response.goals.away' in match.index else None
-                        if pd.notna(h_goals) and pd.notna(a_goals) and str(h_goals).strip() != "":
-                            try:
-                                h = int(float(h_goals))
-                                a = int(float(a_goals))
-                                st.markdown(f"<div class='score-big'>{h} - {a}</div>", unsafe_allow_html=True)
-                            except Exception:
-                                st.markdown(f"<div class='score-big'>{h_goals} - {a_goals}</div>", unsafe_allow_html=True)
-                        else:
-                            tid = "--:--"
-                            if 'Datum' in match.index and pd.notna(match['Datum']) and match['Datum'] != "":
-                                # Försök plocka ut tiddelen
-                                parts = str(match['Datum']).split(' ')
-                                if len(parts) >= 4:
-                                    tid = parts[3]
-                                else:
-                                    tid = str(match['Datum'])
-                            st.markdown(f"<div class='vs-text'>VS<br>{tid}</div>", unsafe_allow_html=True)
-                    # Away team
-                    with col4:
-                        st.write(f"**{away_name}**")
-                    # Button / meta
-                    with col5:
-                        match_date = match.get('Datum', '')
-                        st.markdown(f"<div class='date-text'>{match_date}</div>", unsafe_allow_html=True)
-                        btn_key = f"view_{i}"
-                        if st.button("Visa", key=btn_key):
-                            # Spara hela match-raden som dict i session_state
-                            st.session_state.selected_match = match.to_dict()
-                            st.session_state.page = 'detail'
-                    st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                col1, col2, col3, col4, col5 = st.columns([0.8, 3, 2, 3, 1.5])
+                
+                with col1:
+                    if pd.notna(match.get('response.league.logo')):
+                        st.image(match['response.league.logo'], width=40)
+                
+                with col2:
+                    st.markdown(f"<div class='team-name-list'>{match.get('response.teams.home.name','')}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='league-header'>{match.get('response.league.name','')}</div>", unsafe_allow_html=True)
+                
+                with col3:
+                    h_goals = match.get('response.goals.home')
+                    if pd.notna(h_goals) and str(h_goals).strip() != "":
+                        st.markdown(f"<div class='score-big'>{int(float(h_goals))} - {int(float(match['response.goals.away']))}</div>", unsafe_allow_html=True)
+                    else:
+                        tid = match['Datum'].split(' ')[3] if ' ' in str(match['Datum']) else "--:--"
+                        st.markdown(f"<div class='vs-text'>VS<br>{tid}</div>", unsafe_allow_html=True)
+                
+                with col4:
+                    st.markdown(f"<div class='team-name-list'>{match.get('response.teams.away.name','')}</div>", unsafe_allow_html=True)
+                
+                with col5:
+                    st.markdown(f"<div class='date-text'>{match.get('Datum','').split(' ')[0]} {match.get('Datum','').split(' ')[1]}</div>", unsafe_allow_html=True)
+                    if st.button("Analys", key=f"btn_{i}"):
+                        st.session_state.selected_match = match.to_dict()
+                        st.session_state.page = 'detail'
+                        st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- SIDA 2: DETALJVY ---
+    # --- SIDA 2: ANALYSVY ---
     elif st.session_state.page == 'detail':
         m = st.session_state.selected_match
-        if not m:
-            st.warning("Ingen match vald.")
-            st.session_state.page = 'list'
-        else:
-            st.button("← Tillbaka", on_click=go_back)
-            # Rubrik
-            home = m.get('response.teams.home.name', '')
-            away = m.get('response.teams.away.name', '')
-            st.header(f"{home} vs {away}")
-            # Score / tid
-            h_goals = m.get('response.goals.home')
-            a_goals = m.get('response.goals.away')
-            if pd.notna(h_goals) and pd.notna(a_goals) and str(h_goals).strip() != "":
-                try:
-                    st.subheader(f"{int(float(h_goals))} - {int(float(a_goals))}")
-                except Exception:
-                    st.subheader(f"{h_goals} - {a_goals}")
+        st.button("⬅ Tillbaka", on_click=go_back)
+        
+        # Header Scoreboard
+        st.divider()
+        c1, c2, c3 = st.columns([2, 1, 2])
+        with c1:
+            st.image(m.get('response.teams.home.logo',''), width=80)
+            st.subheader(m.get('response.teams.home.name',''))
+        with c2:
+            h_g = m.get('response.goals.home')
+            if pd.notna(h_g) and str(h_g).strip() != "":
+                st.markdown(f"<div class='score-big'>{int(float(h_g))} - {int(float(m['response.goals.away']))}</div>", unsafe_allow_html=True)
             else:
-                st.subheader(m.get('Datum', 'Tid saknas'))
-            # Visa några metadata och hela raden som json/tabell för debugging
-            st.markdown(f"**League:** {m.get('response.league.name','')}")
-            st.markdown(f"**Date:** {m.get('Datum','')}")
-            # Visa match-data
-            try:
-                df_match = pd.DataFrame({k: [v] for k, v in m.items()})
-                st.dataframe(df_match.T.rename(columns={0: "Value"}))
-            except Exception:
-                st.write(m)
+                st.markdown("<div class='score-big'>VS</div>", unsafe_allow_html=True)
+            st.caption(m.get('Datum',''))
+        with c3:
+            st.image(m.get('response.teams.away.logo',''), width=80)
+            st.subheader(m.get('response.teams.away.name',''))
+        
+        st.divider()
+        
+        tab1, tab2, tab3 = st.tabs(["📊 Statistik", "🔄 Inbördes", "📋 Info"])
+        
+        with tab1:
+            st.subheader("Matchanalys")
+            st.info("Statistikmoduler kommer snart...")
+
+        with tab2:
+            st.subheader("Tidigare möten")
+            t1, t2 = m['response.teams.home.name'], m['response.teams.away.name']
+            h2h = df_raw[(df_raw['spelad'] == True) & (
+                ((df_raw['response.teams.home.name'] == t1) & (df_raw['response.teams.away.name'] == t2)) |
+                ((df_raw['response.teams.home.name'] == t2) & (df_raw['response.teams.away.name'] == t1))
+            )].sort_values(by='dt_object', ascending=False)
+            
+            if not h2h.empty:
+                for _, hm in h2h.iterrows():
+                    col_d, col_m, col_r = st.columns([1.5, 3, 1])
+                    col_d.write(hm['dt_object'].strftime('%d %b %Y'))
+                    col_m.write(f"{hm['response.teams.home.name']} - {hm['response.teams.away.name']}")
+                    col_r.markdown(f"**{int(float(hm['response.goals.home']))} - {int(float(hm['response.goals.away']))}**")
+                    st.divider()
+            else:
+                st.write("Ingen historik hittades.")
+
+        with tab3:
+            st.write(f"**Liga:** {m.get('response.league.name','')}")
+            st.write(f"**Arena:** {m.get('response.fixture.venue.name','N/A')}")
+            st.write(f"**Domare:** {m.get('response.fixture.referee','N/A')}")
 
 except Exception as e:
-    st.title("🏆 Matchcenter")
-    st.error("Ett oväntat fel uppstod. Se nedan för traceback.")
+    st.error(f"Ett fel uppstod: {e}")
     st.text(traceback.format_exc())
