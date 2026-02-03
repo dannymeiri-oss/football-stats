@@ -3,16 +3,9 @@ import pandas as pd
 
 st.set_page_config(page_title="Football Stats Pro", layout="wide")
 
-# CSS för att snygga till korten (Gör dem klickvänliga och moderna)
+# CSS för ett mer modernt utseende
 st.markdown("""
     <style>
-    .match-card {
-        background-color: #1e1e1e;
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 10px;
-        border: 1px solid #333;
-    }
     .team-name {
         font-weight: bold;
         font-size: 18px;
@@ -21,6 +14,11 @@ st.markdown("""
         font-size: 24px;
         font-weight: 900;
         color: #ff4b4b;
+    }
+    .vs-text {
+        text-align: center;
+        color: #888;
+        font-size: 14px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -44,25 +42,12 @@ def load_data():
 try:
     df_raw = load_data()
 
-    # --- SESSION STATE FÖR NAVIGATION ---
     if 'page' not in st.session_state:
         st.session_state.page = 'list'
     if 'selected_match_data' not in st.session_state:
         st.session_state.selected_match_data = None
 
-    # --- FUNKTION FÖR ATT GÅ TILL DETALJER ---
-    def go_to_match(match_data):
-        st.session_state.page = 'details'
-        st.session_state.selected_match_data = match_data
-        st.rerun()
-
-    # --- FUNKTION FÖR ATT GÅ TILLBAKA ---
-    def go_back():
-        st.session_state.page = 'list'
-        st.session_state.selected_match_data = None
-        st.rerun()
-
-    # --- SIDA 1: MATCHLISTAN (CARDS) ---
+    # --- NAVIGATION ---
     if st.session_state.page == 'list':
         st.title("🏆 Matchcenter")
         
@@ -75,9 +60,8 @@ try:
         if search:
             df_view = df_view[df_view.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
 
-        for _, match in df_view.iterrows():
+        for i, match in df_view.iterrows():
             with st.container():
-                # Vi skapar en snygg "rad" för varje match
                 col1, col2, col3, col4, col5 = st.columns([1, 3, 2, 3, 2])
                 
                 with col1:
@@ -90,50 +74,52 @@ try:
                     if match['spelad']:
                         st.markdown(f"<div style='text-align: center;' class='score'>{int(match['response.goals.home'])} - {int(match['response.goals.away'])}</div>", unsafe_allow_html=True)
                     else:
-                        st.markdown(f"<div style='text-align: center; color: #888;'>VS<br><small>{match['Datum'].split(' ')[3]}</small></div>", unsafe_allow_html=True)
+                        tid = match['Datum'].split(' ')[3] if ' ' in match['Datum'] else ""
+                        st.markdown(f"<div class='vs-text'>VS<br>{tid}</div>", unsafe_allow_html=True)
                 
                 with col4:
                     st.markdown(f"<div style='text-align: left;' class='team-name'>{match['response.teams.away.name']}</div>", unsafe_allow_html=True)
                 
                 with col5:
-                    if st.button("Analys", key=f"btn_{match['dt_object']}"):
-                        go_to_match(match)
+                    # FIX: Unikt ID för knappen genom att kombinera tid och lagnamn
+                    btn_id = f"btn_{match['response.teams.home.name']}_{match['response.teams.away.name']}_{i}"
+                    if st.button("Analys", key=btn_id):
+                        st.session_state.selected_match_data = match
+                        st.session_state.page = 'details'
+                        st.rerun()
                 
                 st.divider()
 
-    # --- SIDA 2: MATCHSIDA (DETALJER) ---
     elif st.session_state.page == 'details':
         m = st.session_state.selected_match_data
         
-        st.button("⬅️ Tillbaka", on_click=go_back)
+        if st.button("⬅️ Tillbaka"):
+            st.session_state.page = 'list'
+            st.rerun()
         
-        # Header med loggor och resultat
-        st.markdown(f"### {m['response.league.name']} - {m['response.league.country']}")
+        st.markdown(f"### {m['response.league.name']} ({m['response.league.country']})")
         
         h_col, s_col, a_col = st.columns([2, 1, 2])
         with h_col:
-            st.image(m['response.teams.home.logo'], width=120)
-            st.header(m['response.teams.home.name'])
+            st.image(m['response.teams.home.logo'], width=100)
+            st.subheader(m['response.teams.home.name'])
         with s_col:
             if m['spelad']:
                 st.title(f"{int(m['response.goals.home'])} - {int(m['response.goals.away'])}")
             else:
                 st.title("VS")
-            st.write(m['Datum'])
+            st.caption(m['Datum'])
         with a_col:
-            st.image(m['response.teams.away.logo'], width=120)
-            st.header(m['response.teams.away.name'])
+            st.image(m['response.teams.away.logo'], width=100)
+            st.subheader(m['response.teams.away.name'])
         
         st.divider()
 
-        # Statistik-sektion
-        tab1, tab2, tab3 = st.tabs(["📊 Statistik", "📋 Laguppställning", "💡 Insikter"])
-        
+        tab1, tab2 = st.tabs(["📊 Statistik", "📋 All Data"])
         with tab1:
-            st.subheader("Matchstatistik")
-            # Här bygger vi mätare för statistik senare
-            st.info("Här kommer vi visualisera skott, bollinnehav och xG med snygga mätare.")
-            st.write(m.dropna()) # Visa all rådata så länge
+            st.info("Här bygger vi mätare för skott, bollinnehav etc. när vi valt ut kolumnerna.")
+        with tab2:
+            st.write(m.dropna())
 
 except Exception as e:
     st.error(f"Ett fel uppstod: {e}")
