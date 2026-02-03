@@ -5,12 +5,11 @@ from datetime import datetime
 # 1. Grundinställningar
 st.set_page_config(page_title="Football Stats Pro", layout="wide")
 
-# 2. CSS för det visuella gränssnittet
+# 2. CSS för det visuella
 st.markdown("""
     <style>
-    .team-name { font-weight: bold; font-size: 18px; color: #FFFFFF; }
-    .score-big { font-size: 40px; font-weight: 900; color: #ff4b4b; text-align: center; margin: 0; }
-    .vs-text { text-align: center; color: #888; font-size: 14px; margin-top: 10px; }
+    .score-big { font-size: 35px; font-weight: 900; color: #ff4b4b; text-align: center; }
+    .vs-text { text-align: center; color: #888; font-size: 14px; }
     .league-header { color: #888; font-size: 12px; font-weight: bold; text-transform: uppercase; }
     </style>
     """, unsafe_allow_html=True)
@@ -26,7 +25,6 @@ def load_data():
         df['dt_object'] = pd.to_datetime(df['response.fixture.date']).dt.tz_localize(None)
         df['Datum'] = df['dt_object'].dt.strftime('%d %b %Y %H:%M')
     
-    # Logik för att avgöra om match är spelad
     now = datetime.now()
     goal_col = 'response.goals.home'
     if goal_col in df.columns:
@@ -39,7 +37,6 @@ def load_data():
 try:
     df_raw = load_data()
 
-    # Navigation State
     if 'page' not in st.session_state:
         st.session_state.page = 'list'
     if 'selected_match' not in st.session_state:
@@ -53,7 +50,6 @@ try:
         search = st.sidebar.text_input("Sök lag...")
 
         df_view = df_raw[df_raw['spelad'] == (sida == "Historik")].copy()
-        
         if search:
             df_view = df_view[df_view.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
 
@@ -68,7 +64,7 @@ try:
                         st.image(match['response.league.logo'], width=40)
                     
                     with col2:
-                        st.markdown(f"<div style='text-align: right;' class='team-name'>{match['response.teams.home.name']}</div>", unsafe_allow_html=True)
+                        st.write(f"**{match['response.teams.home.name']}**") # Säker textvisning
                     
                     with col3:
                         h_goals = match.get('response.goals.home')
@@ -79,11 +75,11 @@ try:
                             st.markdown(f"<div class='vs-text'>VS<br>{tid}</div>", unsafe_allow_html=True)
                     
                     with col4:
-                        st.markdown(f"<div style='text-align: left;' class='team-name'>{match['response.teams.away.name']}</div>", unsafe_allow_html=True)
+                        st.write(f"**{match['response.teams.away.name']}**") # Säker textvisning
                     
                     with col5:
-                        # Unik nyckel för att undvika Duplicate Key Error (Bild 2)
-                        btn_key = f"analys_{i}_{match['response.teams.home.name'][:3]}"
+                        # Helt unikt ID för varje knapp
+                        btn_key = f"analys_btn_{i}_{match['response.teams.home.name'][:3]}"
                         if st.button("Analys", key=btn_key):
                             st.session_state.selected_match = match
                             st.session_state.page = 'details'
@@ -106,27 +102,27 @@ try:
         # Scoreboard Header
         c1, c2, c3 = st.columns([2, 1, 2])
         with c1:
-            st.markdown(f"<div style='text-align: center;'><img src='{m['response.teams.home.logo']}' width='100'></div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center;' class='team-name'>{m['response.teams.home.name']}</div>", unsafe_allow_html=True)
+            st.image(m['response.teams.home.logo'], width=100)
+            st.subheader(m['response.teams.home.name'])
         with c2:
             if m['spelad'] and pd.notna(m.get('response.goals.home')):
                 st.markdown(f"<div class='score-big'>{int(m['response.goals.home'])} - {int(m['response.goals.away'])}</div>", unsafe_allow_html=True)
             else:
                 st.markdown(f"<div class='vs-text'><strong>VS</strong></div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center; color: gray; font-size: 12px;'>{m['Datum']}</div>", unsafe_allow_html=True)
+            st.caption(m['Datum'])
         with c3:
-            st.markdown(f"<div style='text-align: center;'><img src='{m['response.teams.away.logo']}' width='100'></div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='text-align: center;' class='team-name'>{m['response.teams.away.name']}</div>", unsafe_allow_html=True)
+            st.image(m['response.teams.away.logo'], width=100)
+            st.subheader(m['response.teams.away.name'])
 
         st.divider()
         
-        # Tomma flikar redo för din statistik
+        # Flikar för ny data
         t1, t2, t3 = st.tabs(["📊 Statistik", "🔄 Inbördes", "📋 Info"])
         with t1:
             st.subheader("Matchanalys")
-            st.info("Sidan är rensad och klar. Vilken statistik ska vi börja med?")
+            st.info("Sidan är rensad och klar. Vad ska vi lägga till först?")
         with t3:
-            st.write(f"**Arena:** {m.get('response.fixture.venue.name', 'Information saknas')}")
+            st.write(f"**Arena:** {m.get('response.fixture.venue.name', 'N/A')}")
             st.write(f"**Domare:** {m.get('response.fixture.referee', 'Ej angiven')}")
 
 except Exception as e:
