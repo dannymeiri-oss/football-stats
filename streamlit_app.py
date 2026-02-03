@@ -3,70 +3,85 @@ import pandas as pd
 
 st.set_page_config(page_title="Football Stats Pro", layout="wide")
 
-# Din CSV-länk
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYB9eRz1kLOPX8YewpfSh5KuZQQ8AoKsfkxSmNutW5adKPMFN1AvLGq3FSVw7ZXwqMYZJVkFIPIO-g/pub?gid=0&single=true&output=csv"
 
 @st.cache_data(ttl=600)
 def load_data():
     df = pd.read_csv(CSV_URL)
     
-    # 1. Mappa om de tekniska namnen till snygga namn
-    # Här väljer vi ut EXAKT de kolumner vi vill se. 
-    # Om en kolumn inte finns i ditt ark än (t.ex. xG), lägg till den i listan sen.
-    keep_and_rename = {
-        'response.fixture.date': 'Datum',
-        'response.league.country': 'Land',
-        'response.league.name': 'Serie',
-        'response.teams.home.name': 'Hemmalag',
-        'response.teams.away.name': 'Bortalag',
-        'response.fixture.referee': 'Domare',
-        'response.fixture.venue.name': 'Arena',
-        'response.fixture.venue.city': 'Stad',
-        'response.goals.home': 'Mål H',
-        'response.goals.away': 'Mål B',
-        'response.league.season': 'Säsong'
+    # DIN "SVARTA LISTA" - Dessa kolumner tas bort helt
+    cols_to_remove = [
+        'get', 'parameters.league', 'parameters.season', 'paging.current', 'paging.total',
+        'results', 'errors', 'response.fixture.id', 'response.fixture.timezone', 
+        'response.fixture.timestamp', 'response.fixture.periods.first', 
+        'response.fixture.periods.second', 'response.fixture.status.short', 
+        'response.fixture.venue.id', 'response.fixture.status.elapsed', 
+        'response.fixture.status.extra', 'response.league.id', 'response.league.logo', 
+        'response.league.flag', 'response.league.round', 'response.league.standings',
+        'response.teams.home.id', 'response.teams.home.logo', 'response.teams.home.winner',
+        'response.teams.away.id', 'response.teams.away.logo', 'response.teams.away.winner',
+        'response.score.extratime.home', 'response.score.extratime.away',
+        'response.score.penalty.home', 'response.score.penalty.away'
+    ]
+    
+    # Ta bort kolumnerna om de finns i filen
+    df = df.drop(columns=[c for c in cols_to_remove if c in df.columns])
+    
+    # SNYGGARE NAMN ENBART FÖR FILTRERING (för att göra sidebaren läsbar)
+    # Vi mappar de långa namnen till korta namn för logikens skull
+    filter_mapping = {
+        'Land': 'response.league.country',
+        'Serie': 'response.league.name',
+        'Säsong': 'response.league.season',
+        'Domare': 'response.fixture.referee',
+        'Hemmalag': 'response.teams.home.name',
+        'Bortalag': 'response.teams.away.name'
     }
     
-    # Behåll bara de vi definierat ovan som faktiskt finns i filen
-    existing_cols = [c for c in keep_and_rename.keys() if c in df.columns]
-    df = df[existing_cols].copy()
-    df = df.rename(columns=keep_and_rename)
-    
-    # 2. Snygga till formatet
-    if 'Säsong' in df.columns:
-        df['Säsong'] = df['Säsong'].astype(str).str.replace('.0', '', regex=False)
-    if 'Datum' in df.columns:
-        df['Datum'] = pd.to_datetime(df['Datum']).dt.strftime('%Y-%m-%d %H:%M')
-        
-    return df
+    return df, filter_mapping
 
 try:
-    df_display = load_data()
+    df, fm = load_data()
 
     st.title("⚽ Matchanalys")
+    st.write("Här visas all din statistik, minus den tekniska metadatan.")
 
     # --- SIDEBAR FILTER ---
     st.sidebar.header("Filtrera")
     
-    # Dynamiska filter baserat på de snygga namnen
-    for col in ['Land', 'Serie', 'Domare']:
-        if col in df_display.columns:
-            options = ['Alla'] + sorted(df_display[col].dropna().unique().tolist())
-            choice = st.sidebar.selectbox(f"Välj {col}", options)
-            if choice != 'Alla':
-                df_display = df_display[df_display[col] == choice]
+    # Land-filter
+    if fm['Land'] in df.columns:
+        land_opt = ['Alla'] + sorted(df[fm['Land']].dropna().unique().tolist())
+        val_land = st.sidebar.selectbox("Välj Land", land_opt)
+        if val_land != 'Alla':
+            df = df[df[fm['Land']] == val_land]
+
+    # Serie-filter
+    if fm['Serie'] in df.columns:
+        serie_opt = ['Alla'] + sorted(df[fm['Serie']].dropna().unique().tolist())
+        val_serie = st.sidebar.selectbox("Välj Serie", serie_opt)
+        if val_serie != 'Alla':
+            df = df[df[fm['Serie'] == val_serie]]
+
+    # Domar-filter
+    if fm['Domare'] in df.columns:
+        dom_opt = ['Alla'] + sorted(df[fm['Domare']].dropna().unique().tolist())
+        val_dom = st.sidebar.selectbox("Välj Domare", dom_opt)
+        if val_dom != 'Alla':
+            df = df[df[fm['Domare']] == val_dom]
 
     # Lag-sök
-    search = st.sidebar.text_input("Sök lag (Hemma eller Borta)")
+    search = st.sidebar.text_input("Sök specifikt lag")
     if search:
-        mask = (df_display['Hemmalag'].str.contains(search, case=False, na=False)) | \
-               (df_display['Bortalag'].str.contains(search, case=False, na=False))
-        df_display = df_display[mask]
+        # Söker i både hemma- och bortakolumnen
+        h_col = fm['Hemmalag']
+        a_col = fm['Bortalag']
+        df = df[(df[h_col].astype(str).str.contains(search, case=False)) | 
+                (df[a_col].astype(str).str.contains(search, case=False))]
 
-    # --- VISA DATA ---
-    st.metric("Antal matcher i urval", len(df_display))
-    st.dataframe(df_display, use_container_width=True)
+    # --- VISA TABELLEN ---
+    st.metric("Antal matcher", len(df))
+    st.dataframe(df, use_container_width=True)
 
 except Exception as e:
-    st.error("Kunde inte ladda tabellen. Kontrollera att kolumnnamnen i Google Sheets stämmer med koden.")
-    st.info(f"Felmeddelande: {e}")
+    st.error(f"Ett fel uppstod: {e}")
