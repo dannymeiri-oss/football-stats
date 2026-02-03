@@ -10,15 +10,35 @@ def load_data():
     df = pd.read_csv(CSV_URL)
     df.columns = df.columns.str.strip()
     
+    # 1. FIXA DATUM OCH SORTERINGSOBJEKT
     if 'response.fixture.date' in df.columns:
+        # Skapa ett dolt tidsobjekt för exakt sortering
         df['dt_object'] = pd.to_datetime(df['response.fixture.date'])
+        # Skapa den snygga texten för visning: "20 Feb 2024 20:15"
         df['Datum'] = df['dt_object'].dt.strftime('%d %b %Y %H:%M')
     
     df['-'] = '-'
     
-    # Skapa en unik nyckel för varje match så vi kan identifiera den
-    df['match_id'] = range(len(df))
+    # 2. DEFINIERA ORDNINGEN
+    desired_order = [
+        'Datum',
+        'response.league.logo',
+        'response.teams.home.logo', 
+        'response.teams.home.name', 
+        'response.goals.home', 
+        '-', 
+        'response.goals.away', 
+        'response.teams.away.name', 
+        'response.teams.away.logo'
+    ]
     
+    blacklist = ['get', 'parameters', 'paging', 'errors', 'results', 'id', 'timezone', 'timestamp', 'periods', 'status', 'venue', 'winner', 'flag', 'response.fixture.date']
+    remaining_cols = [c for c in df.columns if c not in desired_order and not any(b in c.lower() for b in blacklist) and c != 'spelad']
+    
+    final_order = desired_order + remaining_cols
+    df = df.reindex(columns=[c for c in final_order if c in df.columns])
+
+    # Logik för spelad (mål finns)
     if 'response.goals.home' in df.columns:
         df['spelad'] = df['response.goals.home'].notna()
     else:
@@ -26,89 +46,53 @@ def load_data():
     
     return df
 
-def visa_matchrapport(match_data):
-    """Skapar en detaljerad sida för den valda matchen"""
-    st.button("⬅️ Tillbaka till listan", on_click=lambda: st.session_state.pop('selected_match'))
-    
-    col1, col2, col3 = st.columns([2, 1, 2])
-    
-    with col1:
-        st.image(match_data['response.teams.home.logo'], width=100)
-        st.header(match_data['response.teams.home.name'])
-    
-    with col2:
-        st.title(f"{int(match_data['response.goals.home'])} - {int(match_data['response.goals.away'])}")
-        st.caption(match_data['Datum'])
-    
-    with col3:
-        st.image(match_data['response.teams.away.logo'], width=100)
-        st.header(match_data['response.teams.away.name'])
-    
-    st.divider()
-    
-    # EXEMPEL PÅ DATA-PRESENTATION
-    # Här kan du lägga till alla de kolumner du vill visa
-    st.subheader("Matchstatistik")
-    
-    # Vi skapar en snygg jämförelse (Hemma vs Borta)
-    # Här får vi anpassa kolumnnamnen efter vad som finns i ditt Google Sheet
-    stats_cols = st.columns(3)
-    with stats_cols[0]:
-        st.metric("Serie", match_data['response.league.name'])
-    with stats_cols[1]:
-        st.metric("Land", match_data['response.league.country'])
-    
-    st.write("### Fler detaljer")
-    # Här visar vi alla kolumner som inte är med i huvudvyn för den valda matchen
-    st.json(match_data.to_dict()) # Tillfällig lösning för att se all tillgänglig data
-
 try:
     df_raw = load_data()
 
-    # Kontrollera om en match är vald i "session_state"
-    if 'selected_match' in st.session_state:
-        visa_matchrapport(st.session_state.selected_match)
-    else:
-        st.sidebar.title("Meny")
-        sida = st.sidebar.radio("Visa:", ["Historik", "Kommande matcher"])
+    st.sidebar.title("Meny")
+    sida = st.sidebar.radio("Visa:", ["Historik", "Kommande matcher"])
 
-        if sida == "Historik":
-            st.title("⚽ Resultat")
-            df_view = df_raw[df_raw['spelad'] == True].copy()
+    if sida == "Historik":
+        st.title("⚽ Resultat")
+        df_view = df_raw[df_raw['spelad'] == True].copy()
+        # Sortera historik: Senast spelade matchen överst
+        if 'dt_object' in df_view.columns:
             df_view = df_view.sort_values(by='dt_object', ascending=False)
-        else:
-            st.title("📅 Schema")
-            df_view = df_raw[df_raw['spelad'] == False].copy()
+    else:
+        st.title("📅 Schema")
+        df_view = df_raw[df_raw['spelad'] == False].copy()
+        # SORTERA KOMMANDE: Närmaste matchen i tid överst (oavsett liga)
+        if 'dt_object' in df_view.columns:
             df_view = df_view.sort_values(by='dt_object', ascending=True)
+            
+        cols_to_hide = ['response.goals.home', '-', 'response.goals.away']
+        df_view = df_view.drop(columns=[c for c in cols_to_hide if c in df_view.columns])
 
-        search = st.sidebar.text_input("Sök lag")
-        if search:
-            df_view = df_view[df_view.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
+    # Filter
+    search = st.sidebar.text_input("Sök lag")
+    if search:
+        df_view = df_view[df_view.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
 
-        # --- TABELL MED VALBARA RADER ---
-        event = st.dataframe(
-            df_view,
-            column_config={
-                "Datum": st.column_config.TextColumn("Datum & Tid", width="medium"),
-                "response.league.logo": st.column_config.ImageColumn("", width="small"),
-                "response.teams.home.logo": st.column_config.ImageColumn("", width="small"),
-                "response.teams.home.name": "Hemmalag",
-                "response.goals.home": "H",
-                "-": "",
-                "response.goals.away": "B",
-                "response.teams.away.name": "Bortalag",
-                "response.teams.away.logo": st.column_config.ImageColumn("", width="small"),
-            },
-            hide_index=True,
-            on_select="rerun", # Detta gör att appen laddar om när man klickar
-            selection_mode="single-row" # Man kan bara välja en match i taget
-        )
-
-        # Om användaren klickar på en rad
-        if len(event.selection.rows) > 0:
-            selected_row_index = event.selection.rows[0]
-            st.session_state.selected_match = df_view.iloc[selected_row_index]
-            st.rerun()
+    # --- RENDERERING ---
+    # Vi döljer 'dt_object' och 'spelad' i tabellen
+    cols_to_display = [c for c in df_view.columns if c not in ['dt_object', 'spelad']]
+    
+    st.dataframe(
+        df_view[cols_to_display],
+        column_config={
+            "Datum": st.column_config.TextColumn("Datum & Tid", width="medium"),
+            "response.league.logo": st.column_config.ImageColumn("", width="small"),
+            "response.teams.home.logo": st.column_config.ImageColumn("", width="small"),
+            "response.teams.home.name": st.column_config.TextColumn("Hemmalag", width="medium"),
+            "response.goals.home": st.column_config.TextColumn("", width="small"),
+            "-": st.column_config.TextColumn("", width="small"),
+            "response.goals.away": st.column_config.TextColumn("", width="small"),
+            "response.teams.away.name": st.column_config.TextColumn("Bortalag", width="medium"),
+            "response.teams.away.logo": st.column_config.ImageColumn("", width="small"),
+        },
+        use_container_width=False,
+        hide_index=True
+    )
 
 except Exception as e:
     st.error(f"Ett fel uppstod: {e}")
