@@ -9,25 +9,14 @@ CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYB9eRz1kLOPX8YewpfS
 def load_data():
     df = pd.read_csv(CSV_URL)
     
-    # --- TOTALSTÄDNING: Vi tar bort listan på onödiga kolumner ---
-    cols_to_drop = [
-        'get', 'parameters', 'paging', 'errors', 'results',
-        'response.fixture.id', 'response.fixture.timezone', 'response.fixture.timestamp',
-        'response.fixture.periods.first', 'response.fixture.periods.second',
-        'response.fixture.status.short', 'response.fixture.venue.id',
-        'response.fixture.status.elapsed', 'response.fixture.status.extra',
-        'response.league.id', 'response.league.logo', 'response.league.flag',
-        'response.league.round', 'response.league.standings',
-        'response.teams.home.id', 'response.teams.home.logo', 'response.teams.home.winner',
-        'response.teams.away.id', 'response.teams.away.logo', 'response.teams.away.winner',
-        'response.score.extratime.home', 'response.score.extratime.away',
-        'response.score.penalty.home', 'response.score.penalty.away'
-    ]
+    # --- STRÄNGARE TVÄTTMASKIN ---
+    # Tar bort kolumner som innehåller något av dessa ord överhuvudtaget
+    bad_keywords = ['get', 'parameter', 'paging', 'error', 'results', 'fixture.id', 'logo', 'flag', 'winner', 'penalty', 'extratime']
     
-    # Vi tar bara bort de kolumner som faktiskt finns i listan för att undvika fel
-    df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+    clean_cols = [c for c in df.columns if not any(bad in c.lower() for bad in bad_keywords)]
+    df = df[clean_cols]
     
-    # --- SNYGGARE NAMN: Döper om de kvarvarande viktiga namnen ---
+    # --- NAMNBYTE ---
     rename_dict = {
         'response.league.country': 'Land',
         'response.league.name': 'Serie',
@@ -43,51 +32,46 @@ def load_data():
     }
     df = df.rename(columns={k: v for k, v in rename_dict.items() if k in df.columns})
     
-    # Snygga till format
+    # Fixa format för Säsong och Datum
     if 'Säsong' in df.columns:
         df['Säsong'] = df['Säsong'].astype(str).str.replace('.0', '', regex=False)
     if 'Datum' in df.columns:
-        # Gör om till snyggt datumformat: YYYY-MM-DD HH:MM
         df['Datum'] = pd.to_datetime(df['Datum']).dt.strftime('%Y-%m-%d %H:%M')
         
     return df
 
 try:
-    df_raw = load_data()
-    df = df_raw.copy()
+    df = load_data()
 
     st.title("⚽ Matchanalys - Städad vy")
     
-    # --- SIDEBAR FILTRERING ---
+    # --- SIDEBAR ---
     st.sidebar.header("Filter")
+    
+    # Filter-logik (kollar om kolumnen finns innan den skapar filtret)
+    if 'Land' in df.columns:
+        land = st.sidebar.selectbox("Välj Land", ['Alla'] + sorted(df['Land'].dropna().unique().tolist()))
+        if land != 'Alla':
+            df = df[df['Land'] == land]
 
-    # Land
-    land_list = ['Alla'] + sorted(df['Land'].dropna().unique().tolist()) if 'Land' in df.columns else ['Alla']
-    val_land = st.sidebar.selectbox("Välj Land", land_list)
-    if val_land != 'Alla':
-        df = df[df['Land'] == val_land]
+    if 'Serie' in df.columns:
+        serie = st.sidebar.selectbox("Välj Serie", ['Alla'] + sorted(df['Serie'].dropna().unique().tolist()))
+        if serie != 'Alla':
+            df = df[df['Serie'] == serie]
 
-    # Serie
-    serie_list = ['Alla'] + sorted(df['Serie'].dropna().unique().tolist()) if 'Serie' in df.columns else ['Alla']
-    val_serie = st.sidebar.selectbox("Välj Serie", serie_list)
-    if val_serie != 'Alla':
-        df = df[df['Serie'] == val_serie]
+    if 'Domare' in df.columns:
+        domare = st.sidebar.selectbox("Välj Domare", ['Alla'] + sorted(df['Domare'].dropna().unique().tolist()))
+        if domare != 'Alla':
+            df = df[df['Domare'] == domare]
 
-    # Domare
-    domare_list = ['Alla'] + sorted(df['Domare'].dropna().unique().tolist()) if 'Domare' in df.columns else ['Alla']
-    val_domare = st.sidebar.selectbox("Välj Domare", domare_list)
-    if val_domare != 'Alla':
-        df = df[df['Domare'] == val_domare]
-
-    # Lag-sök
-    st.sidebar.markdown("---")
+    # Sök lag
     val_lag = st.sidebar.text_input("Sök lag")
     if val_lag:
-        df = df[(df['Hemmalag'].astype(str).str.contains(val_lag, case=False)) | 
-                (df['Bortalag'].astype(str).str.contains(val_lag, case=False))]
+        # Söker i alla kolumner för säkerhets skull
+        df = df[df.astype(str).apply(lambda x: x.str.contains(val_lag, case=False)).any(axis=1)]
 
-    # --- DATATABELL ---
-    st.metric("Visar antal matcher", len(df))
+    # --- RESULTAT ---
+    st.metric("Hittade matcher", len(df))
     st.dataframe(df, use_container_width=True)
 
 except Exception as e:
