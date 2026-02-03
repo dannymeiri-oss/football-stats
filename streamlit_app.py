@@ -20,9 +20,13 @@ CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYB9eRz1kLOPX8YewpfS
 def load_data():
     df = pd.read_csv(CSV_URL)
     df.columns = df.columns.str.strip()
+    
+    # Skapa datum-objekt och en snygg Datum-sträng
     if 'response.fixture.date' in df.columns:
         df['dt_object'] = pd.to_datetime(df['response.fixture.date']).dt.tz_localize(None)
         df['Datum'] = df['dt_object'].dt.strftime('%d %b %Y %H:%M')
+    
+    # Logik för att avgöra om matchen är spelad
     now = datetime.now()
     goal_col = 'response.goals.home'
     if goal_col in df.columns:
@@ -43,6 +47,7 @@ try:
     # --- SIDA 1: LISTVY ---
     if st.session_state.page == 'list':
         st.title("🏆 Matchcenter")
+        
         sida = st.sidebar.radio("Visa matcher:", ["Kommande", "Historik"])
         search = st.sidebar.text_input("Sök lag...")
 
@@ -52,6 +57,7 @@ try:
 
         if not df_view.empty:
             df_view = df_view.sort_values(by='dt_object', ascending=(sida == "Kommande"))
+            
             for i, match in df_view.iterrows():
                 with st.container():
                     col1, col2, col3, col4, col5 = st.columns([0.8, 3, 2, 3, 1.5])
@@ -76,11 +82,12 @@ try:
                             st.rerun()
                     st.divider()
         else:
-            st.info(f"Inga matcher hittades.")
+            st.info("Inga matcher hittades.")
 
     # --- SIDA 2: ANALYSVY ---
     elif st.session_state.page == 'details':
         m = st.session_state.selected_match
+        
         if st.button("⬅️ Tillbaka"):
             st.session_state.page = 'list'
             st.rerun()
@@ -88,57 +95,10 @@ try:
         st.markdown(f"<div class='league-header'>{m['response.league.name']} | {m['response.league.country']}</div>", unsafe_allow_html=True)
         st.divider()
 
+        # Scoreboard
         c1, c2, c3 = st.columns([2, 1, 2])
         with c1:
             st.image(m['response.teams.home.logo'], width=100)
             st.subheader(m['response.teams.home.name'])
         with c2:
-            if m['spelad'] and pd.notna(m.get('response.goals.home')):
-                st.markdown(f"<div class='score-big'>{int(m['response.goals.home'])} - {int(m['response.goals.away'])}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div class='vs-text'><strong>VS</strong></div>", unsafe_allow_html=True)
-            st.caption(m['Datum'])
-        with c3:
-            st.image(m['response.teams.away.logo'], width=100)
-            st.subheader(m['response.teams.away.name'])
-
-        st.divider()
-        t1, t2, t3 = st.tabs(["📊 Statistik", "🔄 Inbördes", "📋 Info"])
-        
-        with t1:
-            st.subheader("Matchanalys")
-            st.info("Här lägger vi till statistik sen.")
-
-        with t2:
-            st.subheader("Inbördes möten")
-            t1_name = m['response.teams.home.name']
-            t2_name = m['response.teams.away.name']
-            
-            # H2H-logik med säkrade parenteser
-            h2h_df = df_raw[
-                (df_raw['spelad'] == True) & 
-                (
-                    ((df_raw['response.teams.home.name'] == t1_name) & (df_raw['response.teams.away.name'] == t2_name)) | 
-                    ((df_raw['response.teams.home.name'] == t2_name) & (df_raw['response.teams.away.name'] == t1_name))
-                )
-            ].sort_values(by='dt_object', ascending=False)
-
-            if not h2h_df.empty:
-                for _, h_match in h2h_df.iterrows():
-                    col_d, col_m, col_r = st.columns([1, 3, 1])
-                    with col_d:
-                        st.write(h_match['Datum'].split(' ')[0])
-                    with col_m:
-                        st.write(f"{h_match['response.teams.home.name']} - {h_match['response.teams.away.name']}")
-                    with col_r:
-                        st.markdown(f"**{int(h_match['response.goals.home'])} - {int(h_match['response.goals.away'])}**")
-                    st.divider()
-            else:
-                st.write("Inga tidigare möten hittades.")
-
-        with t3:
-            st.write(f"**Arena:** {m.get('response.fixture.venue.name', 'N/A')}")
-            st.write(f"**Domare:** {m.get('response.fixture.referee', 'N/A')}")
-
-except Exception as e:
-    st.error(f"Ett tekniskt fel uppstod: {e}")
+            if m['spelad'] and pd.notna(m.get('response.
