@@ -74,7 +74,7 @@ try:
         df_view = df_view[df_view.astype(str).apply(lambda x: x.str.contains(search, case=False)).any(axis=1)]
 
     # --- RENDERERING ---
-    # Vi döljer 'dt_object' och 'spelad' i tabellen men behåller dem för logiken
+    # Vi döljer 'dt_object' och 'spelad' i tabellen
     cols_to_display = [c for c in df_view.columns if c not in ['dt_object', 'spelad']]
     
     st.dataframe(
@@ -88,4 +88,11 @@ try:
             "-": st.column_config.TextColumn("", width="small"),
             "response.goals.away": st.column_config.TextColumn("", width="small"),
             "response.teams.away.name": st.column_config.TextColumn("Bortalag", width="medium"),
-            "response.teams.away.
+            "response.teams.away.logo": st.column_config.ImageColumn("", width="small"),
+        },
+        use_container_width=False,
+        hide_index=True
+    )
+
+except Exception as e:
+    st.error(f"Ett fel uppstod: {e}")
