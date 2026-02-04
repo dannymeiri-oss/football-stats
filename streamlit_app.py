@@ -47,7 +47,7 @@ df = load_data()
 if df is not None:
     tab1, tab2, tab3 = st.tabs(["⚽ Matcher", "🛡️ Lagstatistik", "⚖️ Domaranalys"])
 
-    # --- FLIK 1: MATCHER (UPPDATERAD VISUELL VY) ---
+    # --- FLIK 1: MATCHER (VISUELL VY) ---
     with tab1:
         st.header("Matchanalys & Historik")
         c1, c2 = st.columns([2, 1])
@@ -101,7 +101,7 @@ if df is not None:
                 </div>
                 """, unsafe_allow_html=True)
 
-    # --- FLIK 2: LAGSTATISTIK (MED FORMKURVA) ---
+    # --- FLIK 2: LAGSTATISTIK (MED UTÖKAD FORMKURVA) ---
     with tab2:
         HOME_COL, AWAY_COL = 'response.teams.home.name', 'response.teams.away.name'
         
@@ -118,22 +118,30 @@ if df is not None:
             if selected_season != "Alla": s_df = s_df[s_df['response.league.season'] == selected_season]
             s_df = s_df.sort_values('response.fixture.date', ascending=False)
             
-            # Formkurva
+            # --- FORM & RESULTAT ---
+            st.write(f"### Senaste 5 matcherna för {selected_team}")
             form_matches = s_df.head(5)
-            form_list = []
-            for _, row in form_matches.iterrows():
+            f_cols = st.columns(5)
+            
+            for i, (_, row) in enumerate(form_matches.iterrows()):
                 is_h = row[HOME_COL] == selected_team
-                gf = row['response.goals.home'] if is_h else row['response.goals.away']
-                ga = row['response.goals.away'] if is_h else row['response.goals.home']
-                if gf > ga: form_list.append(('V', '#2e7d32'))
-                elif gf < ga: form_list.append(('F', '#d32f2f'))
-                else: form_list.append(('O', '#9e9e9e'))
-
-            st.write(f"### Formkurva (Senaste {len(form_list)})")
-            f_cols = st.columns(10)
-            for i, (res, color) in enumerate(reversed(form_list)):
+                opp = row[AWAY_COL] if is_h else row[HOME_COL]
+                gf = int(row['response.goals.home'] if is_h else row['response.goals.away'])
+                ga = int(row['response.goals.away'] if is_h else row['response.goals.home'])
+                
+                if gf > ga: color, res_txt = '#2e7d32', 'V'
+                elif gf < ga: color, res_txt = '#d32f2f', 'F'
+                else: color, res_txt = '#9e9e9e', 'O'
+                
                 with f_cols[i]:
-                    st.markdown(f"<div style='background:{color};color:white;border-radius:50%;width:35px;height:35px;display:flex;align-items:center;justify-content:center;font-weight:bold;'>{res}</div>", unsafe_allow_html=True)
+                    st.markdown(f"""
+                        <div style="display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px; background: #f8f9fa; border-radius: 8px; border: 1px solid #eee;">
+                            <div style="background:{color}; color:white; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold;">{res_txt}</div>
+                            <div style="font-size: 0.9em; font-weight: bold;">{gf} - {ga}</div>
+                            <div style="font-size: 0.7em; color: #666; text-align: center;">vs {opp[:12]}</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+            
             st.divider()
 
             if num_matches == "Senaste 20": s_df = s_df.head(20)
