@@ -78,17 +78,20 @@ if df is not None:
             st.session_state.view_match = None
             st.rerun()
         r = st.session_state.view_match
-        st.title(f"{r['response.teams.home.name']} {int(r['response.goals.home'])} - {int(r['response.goals.away'])} {r['response.teams.away.name']}")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Anfall")
-            stat_comparison_row("xG", r['xG Hemma'], r['xG Borta'])
-            stat_comparison_row("Skott på mål", int(r['Skott på mål Hemma']), int(r['Skott på mål Borta']))
-            stat_comparison_row("Hörnor", int(r['Hörnor Hemma']), int(r['Hörnor Borta']))
-        with col2:
-            st.subheader("Matchfakta")
-            stat_comparison_row("Bollinnehav", int(r['Bollinnehav Hemma']), int(r['Bollinnehav Borta']), True)
-            stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
+        st.markdown(f"<h1 style='text-align: center;'>{r['response.teams.home.name']} {int(r['response.goals.home'])} - {int(r['response.goals.away'])} {r['response.teams.away.name']}</h1>", unsafe_allow_html=True)
+        
+        col_wrap = st.columns([1, 6, 1])
+        with col_wrap[1]:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Anfall")
+                stat_comparison_row("xG", r['xG Hemma'], r['xG Borta'])
+                stat_comparison_row("Skott på mål", int(r['Skott på mål Hemma']), int(r['Skott på mål Borta']))
+                stat_comparison_row("Hörnor", int(r['Hörnor Hemma']), int(r['Hörnor Borta']))
+            with col2:
+                st.subheader("Matchfakta")
+                stat_comparison_row("Bollinnehav", int(r['Bollinnehav Hemma']), int(r['Bollinnehav Borta']), True)
+                stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
 
     # --- VY 2: H2H MED TOTAL FÖRVÄNTAN (KOMMANDE) ---
     elif st.session_state.view_h2h is not None:
@@ -100,54 +103,57 @@ if df is not None:
         h_team = m['response.teams.home.name']
         a_team = m['response.teams.away.name']
         
-        st.header(f"H2H Analys: {h_team} vs {a_team}")
+        st.markdown(f"<h1 style='text-align: center;'>H2H Analys: {h_team} vs {a_team}</h1>", unsafe_allow_html=True)
         
         h_stats = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
         a_stats = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
         
-        if not h_stats.empty and not a_stats.empty:
-            st.subheader("🎯 Total Förväntad Matchstatistik")
-            tc1, tc2, tc3, tc4 = st.columns(4)
-            
-            exp_goals = h_stats['response.goals.home'].mean() + a_stats['response.goals.away'].mean()
-            exp_xg = h_stats['xG Hemma'].mean() + a_stats['xG Borta'].mean()
-            exp_corners = h_stats['Hörnor Hemma'].mean() + a_stats['Hörnor Borta'].mean()
-            exp_cards = h_stats['Gula kort Hemma'].mean() + a_stats['Gula Kort Borta'].mean()
-            
-            tc1.metric("Förväntade Mål", round(exp_goals, 2))
-            tc2.metric("Förväntad xG", round(exp_xg, 2))
-            tc3.metric("Förväntade Hörnor", round(exp_corners, 1))
-            tc4.metric("Förväntade Gula Kort", round(exp_cards, 1))
+        # Centrerar innehållet genom att använda kolumner som "padding"
+        main_c1, main_c2, main_c3 = st.columns([1, 5, 1])
+        
+        with main_c2:
+            if not h_stats.empty and not a_stats.empty:
+                st.markdown("<h3 style='text-align: center;'>🎯 Total Förväntad Matchstatistik</h3>", unsafe_allow_html=True)
+                tc1, tc2, tc3, tc4 = st.columns(4)
+                
+                exp_goals = h_stats['response.goals.home'].mean() + a_stats['response.goals.away'].mean()
+                exp_xg = h_stats['xG Hemma'].mean() + a_stats['xG Borta'].mean()
+                exp_corners = h_stats['Hörnor Hemma'].mean() + a_stats['Hörnor Borta'].mean()
+                exp_cards = h_stats['Gula kort Hemma'].mean() + a_stats['Gula Kort Borta'].mean()
+                
+                tc1.metric("Förväntade Mål", round(exp_goals, 2))
+                tc2.metric("Förväntad xG", round(exp_xg, 2))
+                tc3.metric("Hörnor", round(exp_corners, 1))
+                tc4.metric("Gula Kort", round(exp_cards, 1))
+                
+                st.divider()
+                
+                st.markdown("<h3 style='text-align: center;'>📊 Lagjämförelse (Snitt Hemma vs Borta)</h3>", unsafe_allow_html=True)
+                cols = [
+                    ("Mål", 'response.goals.home', 'response.goals.away'),
+                    ("xG", 'xG Hemma', 'xG Borta'),
+                    ("Bollinnehav", 'Bollinnehav Hemma', 'Bollinnehav Borta'),
+                    ("Skott på mål", 'Skott på mål Hemma', 'Skott på mål Borta'),
+                    ("Hörnor", 'Hörnor Hemma', 'Hörnor Borta'),
+                    ("Fouls", 'Fouls Hemma', 'Fouls Borta'),
+                    ("Gula Kort", 'Gula kort Hemma', 'Gula Kort Borta'),
+                ]
+                for label, h_col, a_col in cols:
+                    is_p = "%" in label or "Bollinnehav" in label
+                    stat_comparison_row(label, round(h_stats[h_col].mean(), 2), round(a_stats[a_col].mean(), 2), is_p)
             
             st.divider()
+            st.markdown("<h3 style='text-align: center;'>📜 Senaste möten</h3>", unsafe_allow_html=True)
+            h2h_matches = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
             
-            st.subheader("📊 Lagjämförelse (Snitt Hemma vs Borta)")
-            cols = [
-                ("Mål", 'response.goals.home', 'response.goals.away'),
-                ("xG", 'xG Hemma', 'xG Borta'),
-                ("Bollinnehav", 'Bollinnehav Hemma', 'Bollinnehav Borta'),
-                ("Skott på mål", 'Skott på mål Hemma', 'Skott på mål Borta'),
-                ("Hörnor", 'Hörnor Hemma', 'Hörnor Borta'),
-                ("Fouls", 'Fouls Hemma', 'Fouls Borta'),
-                ("Gula Kort", 'Gula kort Hemma', 'Gula Kort Borta'),
-            ]
-            for label, h_col, a_col in cols:
-                is_p = "%" in label or "Bollinnehav" in label
-                stat_comparison_row(label, round(h_stats[h_col].mean(), 2), round(a_stats[a_col].mean(), 2), is_p)
-        
-        st.subheader("📜 Senaste möten")
-        h2h_matches = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
-        
-        if not h2h_matches.empty:
-            h2h_display = h2h_matches[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']].copy()
-            # Uppdaterat datumformat: 20 Feb 2025 19:00
-            h2h_display['datetime'] = h2h_display['datetime'].dt.strftime('%d %b %Y %H:%M')
-            # Nya headers: Datum, Hemmalag, , , Bortalag
-            h2h_display.columns = ['Datum', 'Hemmalag', ' ', '  ', 'Bortalag']
-            
-            st.dataframe(h2h_display.sort_values('Datum', ascending=False), hide_index=True, use_container_width=True)
-        else:
-            st.write("Inga tidigare möten hittades.")
+            if not h2h_matches.empty:
+                h2h_display = h2h_matches[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']].copy()
+                h2h_display['datetime'] = h2h_display['datetime'].dt.strftime('%d %b %Y %H:%M')
+                h2h_display.columns = ['Datum', 'Hemmalag', ' ', '  ', 'Bortalag']
+                
+                st.dataframe(h2h_display.sort_values('Datum', ascending=False), hide_index=True, use_container_width=True)
+            else:
+                st.write("Inga tidigare möten hittades.")
 
     # --- VY 3: HUVUDTABBAR ---
     else:
