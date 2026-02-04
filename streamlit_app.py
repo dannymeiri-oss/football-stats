@@ -70,7 +70,6 @@ if df is not None:
     else:
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Matcher", "🛡️ Lagstatistik", "⚖️ Domaranalys", "🏆 Tabell"])
 
-        # --- TAB 1: MATCHER ---
         with tab1:
             st.header("Matchcenter")
             m_col, s_col = st.columns(2)
@@ -91,21 +90,28 @@ if df is not None:
                         st.session_state.view_match = r
                         st.rerun()
 
-        # --- TAB 2: LAGSTATISTIK ---
         with tab2:
             st.header("🛡️ Laganalys")
             f_col1, f_col2 = st.columns(2)
             all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
             sel_team = f_col1.selectbox("Välj lag:", all_teams)
-            all_years = sorted(df['Säsong'].unique(), reverse=True)
-            sel_year = f_col2.selectbox("Välj säsong (år):", all_years)
+            
+            # --- NYTT: Alternativ för "Alla säsonger" ---
+            years = sorted(df['Säsong'].unique(), reverse=True)
+            year_options = ["Alla säsonger"] + [str(y) for y in years]
+            sel_year_choice = f_col2.selectbox("Välj säsong:", year_options)
             
             if sel_team:
-                team_year_df = df[df['Säsong'] == sel_year]
-                h_df = team_year_df[(team_year_df['response.teams.home.name'] == sel_team) & (team_year_df['response.fixture.status.short'] == 'FT')]
-                a_df = team_year_df[(team_year_df['response.teams.away.name'] == sel_team) & (team_year_df['response.fixture.status.short'] == 'FT')]
+                # Filtrering baserat på val
+                if sel_year_choice == "Alla säsonger":
+                    t_df = df
+                else:
+                    t_df = df[df['Säsong'] == int(sel_year_choice)]
                 
-                st.subheader(f"📊 Totalt snitt {sel_year}")
+                h_df = t_df[(t_df['response.teams.home.name'] == sel_team) & (t_df['response.fixture.status.short'] == 'FT')]
+                a_df = t_df[(t_df['response.teams.away.name'] == sel_team) & (t_df['response.fixture.status.short'] == 'FT')]
+                
+                st.subheader(f"📊 Totalt snitt ({sel_year_choice})")
                 t_m = len(h_df) + len(a_df)
                 if t_m > 0:
                     tc1, tc2, tc3, tc4, tc5 = st.columns(5)
@@ -163,7 +169,6 @@ if df is not None:
                         st.metric("Passningssäkerhet", f"{int(a_df['Passningssäkerhet Borta'].mean())}%")
                     else: st.write("Ingen data.")
 
-        # --- TAB 3: DOMARANALYS ---
         with tab3:
             st.header("⚖️ Domaranalys")
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["0", "Okänd"]])
@@ -176,7 +181,6 @@ if df is not None:
                 c3.metric("Fouls/Match", round((r_df['Fouls Hemma'] + r_df['Fouls Borta']).mean(), 2))
                 c4.metric("Straffar Totalt", int(r_df['Straffar Hemma'].sum() + r_df['Straffar Borta'].sum()))
 
-        # --- TAB 4: TABELL ---
         with tab4:
             st.header("🏆 Tabell")
             if standings_df is not None:
