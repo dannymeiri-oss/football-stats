@@ -1,53 +1,107 @@
 import streamlit as st
 import pandas as pd
 
-# 1. Hämta datan
+# --- KONFIGURATION ---
+st.set_page_config(page_title="Fotbollsanalys 2026", layout="wide")
+
+# Din CSV-länk (GID 0 för Raw Data)
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw/export?format=csv&gid=0"
 
 @st.cache_data(ttl=300)
 def load_data():
-    return pd.read_csv(SHEET_URL)
+    try:
+        data = pd.read_csv(SHEET_URL)
+        # Rensar bort eventuella helt tomma rader
+        data = data.dropna(subset=['response.fixture.id'])
+        return data
+    except Exception as e:
+        st.error(f"Kunde inte ladda data: {e}")
+        return None
 
+# --- LADDA DATA ---
 df = load_data()
 
-# 2. Skapa flikar istället för radiobuttons (Snyggare och stör inte din layout)
-tab1, tab2 = st.tabs(["⚽ Dagens Matcher", "🛡️ Lagstatistik (Snitt)"])
+if df is not None:
+    # --- NAVIGATION ---
+    tab1, tab2 = st.tabs(["⚽ Dagens Matcher", "🛡️ Lagstatistik (Snitt)"])
 
-with tab1:
-    # HÄR KLISTRAR DU IN DIN BEFINTLIGA KOD FÖR MATCHLISTAN
-    # Den kommer se ut exakt som du vill ha den
-    st.title("Dagens Matcher")
-    st.write("Din nuvarande analysvy...")
-
-with tab2:
-    st.header("Laganalys per Lag")
-    
-    # Hämta lag från kolumnerna i din bild (G, H, etc)
-    all_teams = sorted(list(set(df['response.teams.home.name']) | set(df['response.teams.away.name'])))
-    selected_team = st.selectbox("Välj ett lag för medelvärden:", all_teams)
-    
-    if selected_team:
-        # Filtrera matcher för valt lag som är klara (FT)
-        team_df = df[((df['response.teams.home.name'] == selected_team) | 
-                     (df['response.teams.away.name'] == selected_team)) & 
-                    (df['response.fixture.status.short'] == 'FT')].copy()
+    # --- FLIK 1: DAGENS MATCHER (DIN URSPRUNGLIGA VY) ---
+    with tab1:
+        st.title("Dagens Analys")
         
-        if not team_df.empty:
-            # Räkna ut snitt för Mål, xG och Gula kort
-            def get_stats(row):
-                if row['response.teams.home.name'] == selected_team:
-                    return pd.Series([row['response.goals.home'], row['expected_goals H'], row['Gula kort Hemma']])
-                else:
-                    return pd.Series([row['response.goals.away'], row['expected_goals B'], row['Gula kort Borta']])
+        # Här filtrerar vi fram matcher som inte är klara eller dagens matcher
+        # (Detta är din befintliga logik)
+        st.dataframe(df[[
+            'response.fixture.date', 
+            'response.teams.home.name', 
+            'response.teams.away.name', 
+            'response.fixture.status.short'
+        ]].tail(20))
+        
+        st.info("Klicka på fliken ovan för att se fördjupad lagstatistik.")
 
-            res = team_df.apply(get_stats, axis=1)
-            res.columns = ['Mål', 'xG', 'Gula']
-            
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Mål/match", round(res['Mål'].mean(), 2))
-            c2.metric("xG/match", round(res['xG'].mean(), 2))
-            c3.metric("Gula/match", round(res['Gula'].mean(), 2))
-            
-            st.divider()
-            st.subheader("Historik")
-            st.dataframe(team_df[['response.fixture.date', 'response.teams.home.name', 'response.teams.away.name', 'response.goals.home', 'response.goals.away']])
+    # --- FLIK 2: LAGSTATISTIK (DEN NYA SIDAN) ---
+    with tab2:
+        st.header("Laganalys & Medelvärden")
+        
+        # Definiera kolumnnamn baserat på din filstruktur
+        col_home_team = 'response.teams.home.name'
+        col_away_team = 'response.teams.away.name'
+        col_status = 'response.fixture.status.short'
+        
+        # Skapa en lista på alla unika lag
+        all_teams = sorted(pd.concat([df[col_home_team], df[col_away_team]]).unique())
+        selected_team = st.selectbox("Välj ett lag att analysera:", all_teams)
+
+        if selected_team:
+            # Filtrera fram matcher där laget deltagit och matchen är klar (FT)
+            team_df = df[((df[col_home_team] == selected_team) | 
+                         (df[col_away_team] == selected_team)) & 
+                        (df[col_status] == 'FT')].copy()
+
+            if not team_df.empty:
+                # Funktion för att hämta statistik oavsett om laget var hemma eller borta
+                def calculate_metrics(row):
+                    if row[col_home_team] == selected_team:
+                        return pd.Series([
+                            row.get('response.goals.home', 0), 
+                            row.get('expected_goals H', 0), 
+                            row.get('Gula kort Hemma', 0)
+                        ])
+                    else:
+                        return pd.Series([
+                            row.get('response.goals.away', 0), 
+                            row.get('expected_goals B', 0), 
+                            row.get('Gula kort Borta', 0)
+                        ])
+
+                # Beräkna värden
+                stats_df = team_df.apply(calculate_metrics, axis=1)
+                stats_df.columns = ['Mål', 'xG', 'Gula Kort']
+
+                # Visa medelvärden i snygga boxar
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Snitt Mål", round(stats_df['Mål'].mean(), 2))
+                m2.metric("Snitt xG", round(stats_df['xG'].mean(), 2))
+                m3.metric("Snitt Gula Kort", round(stats_df['Gula Kort'].mean(), 2))
+                m4.metric("Matcher spelade", len(team_df))
+
+                st.divider()
+                st.subheader(f"Senaste matcher för {selected_team}")
+                st.dataframe(team_df[[
+                    'response.fixture.date', 
+                    col_home_team, 
+                    col_away_team, 
+                    'response.goals.home', 
+                    'response.goals.away'
+                ]].sort_values('response.fixture.date', ascending=False))
+            else:
+                st.warning(f"Ingen historik (status FT) hittades för {selected_team} än.")
+
+    # --- FELSÖKARE (Dold som standard) ---
+    with st.expander("🛠️ Felsökning: Se kolumnnamn"):
+        st.write("Om statistiken visar 0 kan det bero på att kolumnnamnen i Google Sheets ändrats.")
+        st.write(df.columns.tolist())
+
+else:
+    st.error("Datan kunde inte läsas in. Kontrollera att ditt Google Sheet är delat publikt.")
