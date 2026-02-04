@@ -41,12 +41,12 @@ if df is not None:
     tab1, tab2 = st.tabs(["⚽ Matcher", "🛡️ Lagstatistik"])
 
     with tab1:
+        st.title("Matchlista")
         st.dataframe(df[['response.fixture.date', 'response.teams.home.name', 'response.teams.away.name', 'response.fixture.status.short', 'response.goals.home', 'response.goals.away']].sort_values('response.fixture.date', ascending=False), use_container_width=True)
 
     with tab2:
         HOME_COL, AWAY_COL, SEASON_COL = 'response.teams.home.name', 'response.teams.away.name', 'response.league.season'
         
-        # Filter
         f1, f2, f3 = st.columns(3)
         with f1:
             selected_team = st.selectbox("Välj lag:", sorted(pd.concat([df[HOME_COL], df[AWAY_COL]]).unique()))
@@ -56,13 +56,13 @@ if df is not None:
             num_matches = st.radio("Urval:", ["Samtliga", "Senaste 20"], horizontal=True)
 
         if selected_team:
-            # Filtrera spelade matcher
+            # Filtrera spelade matcher för statistik
             s_df = df[((df[HOME_COL] == selected_team) | (df[AWAY_COL] == selected_team)) & (df['response.fixture.status.short'] == 'FT')].copy()
             if selected_season != "Alla": s_df = s_df[s_df[SEASON_COL] == selected_season]
             s_df = s_df.sort_values('response.fixture.date', ascending=False)
             if num_matches == "Senaste 20": s_df = s_df.head(20)
 
-            def get_stats(target_df, team_name):
+            def get_full_metrics(target_df, team_name):
                 if target_df.empty: return None
                 def map_row(row):
                     is_h = row[HOME_COL] == team_name
@@ -80,28 +80,47 @@ if df is not None:
                     })
                 return target_df.apply(map_row, axis=1).mean().round(2)
 
-            avg_t = get_stats(s_df, selected_team)
-            avg_h = get_stats(s_df[s_df[HOME_COL] == selected_team], selected_team)
-            avg_a = get_stats(s_df[s_df[AWAY_COL] == selected_team], selected_team)
+            def render_full_view(title, data, count):
+                if data is None: 
+                    st.warning(f"Ingen data tillgänglig för {title}")
+                    return
+                st.markdown(f"---")
+                st.header(f"{title} ({count} matcher)")
+                
+                # Rad 1: Huvudfokus
+                r1_1, r1_2, r1_3, r1_4 = st.columns(4)
+                r1_1.metric("Mål", data['Mål'])
+                r1_2.metric("xG", data['xG'])
+                r1_3.metric("Hörnor", data['Hörnor'])
+                r1_4.metric("Bollinnehav", f"{data['Boll']}%")
 
-            # --- PRESENTATION UTAN EXPANDERS ---
-            st.header(f"Statistik: {selected_team}")
-            
-            # Gruppera statistik för snyggare layout
-            stat_groups = [
-                ("Huvudstatistik", [('Mål', 'Mål'), ('xG', 'xG'), ('Hörnor', 'Hörnor'), ('Bollinnehav %', 'Boll')]),
-                ("Anfall", [('Skott på mål', 'S_mål'), ('Totala skott', 'S_tot'), ('Skott i box', 'S_box'), ('Skott utanför box', 'S_ut_box'), ('Blockerade skott', 'S_block')]),
-                ("Speluppbyggnad", [('Passningar', 'Pass'), ('Passningssäkerhet %', 'Pass_%'), ('Offside', 'Offside')]),
-                ("Defensiv & Disciplin", [('Fouls', 'Fouls'), ('Gula kort', 'Gula'), ('Röda kort', 'Röda'), ('Räddningar', 'Rädd')])
-            ]
+                # Rad 2: Skottdetaljer
+                r2_1, r2_2, r2_3, r2_4 = st.columns(4)
+                r2_1.metric("Skott på mål", data['S_mål'])
+                r2_2.metric("Totala skott", data['S_tot'])
+                r2_3.metric("Skott i Box", data['S_box'])
+                r2_4.metric("Blockerade skott", data['S_block'])
 
-            for group_name, stats in stat_groups:
-                st.subheader(group_name)
-                for label, key in stats:
-                    # Skapa en rad för varje stat med etikett och tre värden
-                    col_label, col_t, col_h, col_a = st.columns([2, 1, 1, 1])
-                    col_label.write(f"**{label}**")
-                    col_t.metric("TOTALT", avg_t[key] if avg_t is not None else "-")
-                    col_h.metric("HEMMA", avg_h[key] if avg_h is not None else "-")
-                    col_a.metric("BORTA", avg_a[key] if avg_a is not None else "-")
-                st.divider()
+                # Rad 3: Fler skott & Passningar
+                r3_1, r3_2, r3_3, r3_4 = st.columns(4)
+                r3_1.metric("Skott Utanför", data['S_ut'])
+                r3_2.metric("Skott utanför Box", data['S_ut_box'])
+                r3_3.metric("Passningar", data['Pass'])
+                r3_4.metric("Passningssäkerhet", f"{data['Pass_%']}%")
+
+                # Rad 4: Disciplin & Defensiv
+                r4_1, r4_2, r4_3, r4_4 = st.columns(4)
+                r4_1.metric("Gula kort", data['Gula'])
+                r4_2.metric("Fouls", data['Fouls'])
+                r4_3.metric("Offside", data['Offside'])
+                r4_4.metric("Räddningar", data['Rädd'])
+
+            # Beräkna allt
+            avg_t = get_full_metrics(s_df, selected_team)
+            avg_h = get_full_metrics(s_df[s_df[HOME_COL] == selected_team], selected_team)
+            avg_a = get_full_metrics(s_df[stats_df[AWAY_COL] == selected_team], selected_team) if 'stats_df' not in locals() else get_full_metrics(s_df[s_df[AWAY_COL] == selected_team], selected_team)
+
+            # Visa allt direkt på sidan
+            render_full_view("📊 TOTALT", avg_t, len(s_df))
+            render_full_view("🏠 HEMMA", avg_h, len(s_df[s_df[HOME_COL] == selected_team]))
+            render_full_view("✈️ BORTA", avg_a, len(s_df[s_df[AWAY_COL] == selected_team]))
