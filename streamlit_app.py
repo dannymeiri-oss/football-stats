@@ -105,4 +105,31 @@ if df is not None:
                         'Passningar': row.get(f'Passningar{suffix}', 0),
                         'Passningssäkerhet': row.get(f'Passningssäkerhet{suffix}', 0),
                         'Offside': row.get(f'Offside{suffix}', 0),
-                        'Räddningar': row.get(f'Räddningar{
+                        'Räddningar': row.get(f'Räddningar{suffix}', 0)
+                    })
+
+                stats_df = team_df.apply(get_all_stats, axis=1)
+                avg = stats_df.mean().round(2)
+
+                st.subheader(f"Statistik för {selected_team} ({len(team_df)} spelade matcher)")
+                
+                # Samma visualisering som förut (KPIS + Expanders)
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Mål", avg['Mål'])
+                c2.metric("xG", avg['xG'])
+                c3.metric("Bollinnehav", f"{avg['Bollinnehav']}%")
+                c4.metric("Hörnor", avg['Hörnor'])
+
+                col_left, col_right = st.columns(2)
+                with col_left:
+                    with st.expander("🎯 Offensiv & Skott", expanded=True):
+                        st.write(f"**Totala skott:** {avg['Total Skott']}")
+                        st.write(f"**Skott på mål:** {avg['Skott på mål']}")
+                        st.write(f"**Skott i box:** {avg['Skott i Box']}")
+                with col_right:
+                    with st.expander("🛡️ Försvar & Disciplin", expanded=True):
+                        st.write(f"**Gula kort:** {avg['Gula']}")
+                        st.write(f"**Fouls:** {avg['Fouls']}")
+                        st.write(f"**Räddningar:** {avg['Räddningar']}")
+            else:
+                st.info(f"Inga matcher hittades för det valda filtret.")
