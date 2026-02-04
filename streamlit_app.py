@@ -141,7 +141,7 @@ if df is not None:
                         </div>
                         <div style="background:#222; color:white; padding:3px 10px; border-radius:4px; min-width:60px; text-align:center; font-family:monospace;">{res_txt}</div>
                         <div style="flex:1; text-align:left; font-weight:bold; padding-left:10px;">
-                            <img src="{a_logo}" width="20" style="vertical-align:middle; margin-right:5px;"> {row['response.teams.away.name']}
+                            <img src="{a_logo}" width="20" style="vertical-align:middle; margin-right:8px;"> {row['response.teams.away.name']}
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
@@ -153,36 +153,39 @@ if df is not None:
                     else:
                         st.button("H2H", key=f"btn_{index}", disabled=True)
 
-        # --- TAB 2: LAGSTATISTIK (UPPDATERAD) ---
+        # --- TAB 2: LAGSTATISTIK (HEMMA/BORTA ÅTERSTÄLLD) ---
         with tab2:
-            st.header("📊 Detaljerad Laganalys")
+            st.header("🛡️ Laganalys: Hemma & Borta")
             teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
-            sel_team = st.selectbox("Välj lag för statistik:", teams)
+            sel_team = st.selectbox("Välj lag:", teams)
             
             if sel_team:
-                # Filtrera matcher där laget deltagit och matchen är spelad (FT)
-                t_df = df[((df['response.teams.home.name'] == sel_team) | (df['response.teams.away.name'] == sel_team)) & (df['response.fixture.status.short'] == 'FT')]
+                h_df = df[(df['response.teams.home.name'] == sel_team) & (df['response.fixture.status.short'] == 'FT')]
+                a_df = df[(df['response.teams.away.name'] == sel_team) & (df['response.fixture.status.short'] == 'FT')]
                 
-                if t_df.empty:
-                    st.warning("Inga spelade matcher hittades för detta lag i databasen ännu.")
-                else:
-                    st.subheader(f"Snittstatistik för {sel_team} (Baserat på {len(t_df)} matcher)")
-                    
-                    # Beräkna snittvärden beroende på om laget var hemma eller borta
-                    t_df['goals_for'] = t_df.apply(lambda r: r['response.goals.home'] if r['response.teams.home.name'] == sel_team else r['response.goals.away'], axis=1)
-                    t_df['xg_for'] = t_df.apply(lambda r: r['xG Hemma'] if r['response.teams.home.name'] == sel_team else r['xG Borta'], axis=1)
-                    t_df['corners_for'] = t_df.apply(lambda r: r['Hörnor Hemma'] if r['response.teams.home.name'] == sel_team else r['Hörnor Borta'], axis=1)
-                    t_df['yellow_for'] = t_df.apply(lambda r: r['Gula kort Hemma'] if r['response.teams.home.name'] == sel_team else r['Gula Kort Borta'], axis=1)
-                    
-                    m1, m2, m3, m4 = st.columns(4)
-                    m1.metric("Snitt Mål", round(t_df['goals_for'].mean(), 2))
-                    m2.metric("Snitt xG", round(t_df['xg_for'].mean(), 2))
-                    m3.metric("Snitt Hörnor", round(t_df['corners_for'].mean(), 2))
-                    m4.metric("Snitt Gula kort", round(t_df['yellow_for'].mean(), 2))
-                    
-                    st.divider()
-                    st.write("Senaste resultaten för laget:")
-                    st.dataframe(t_df[['datetime', 'response.teams.home.name', 'response.teams.away.name', 'response.goals.home', 'response.goals.away']].tail(10), hide_index=True)
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.subheader("🏠 Hemma")
+                    if not h_df.empty:
+                        st.metric("Matcher", len(h_df))
+                        st.metric("Mål snitt", round(h_df['response.goals.home'].mean(), 2))
+                        st.metric("xG snitt", round(h_df['xG Hemma'].mean(), 2))
+                        st.metric("Hörnor snitt", round(h_df['Hörnor Hemma'].mean(), 2))
+                        st.metric("Gula kort snitt", round(h_df['Gula kort Hemma'].mean(), 2))
+                    else:
+                        st.write("Ingen hemma-data tillgänglig.")
+                
+                with col2:
+                    st.subheader("✈️ Borta")
+                    if not a_df.empty:
+                        st.metric("Matcher", len(a_df))
+                        st.metric("Mål snitt", round(a_df['response.goals.away'].mean(), 2))
+                        st.metric("xG snitt", round(a_df['xG Borta'].mean(), 2))
+                        st.metric("Hörnor snitt", round(a_df['Hörnor Borta'].mean(), 2))
+                        st.metric("Gula kort snitt", round(a_df['Gula Kort Borta'].mean(), 2))
+                    else:
+                        st.write("Ingen borta-data tillgänglig.")
 
         # --- TAB 3: DOMARANALYS ---
         with tab3:
