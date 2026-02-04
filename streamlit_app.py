@@ -1,5 +1,5 @@
 import streamlit as st
-import pd as pd
+import pandas as pd  # <--- Fixat här!
 
 # --- 1. KONFIGURATION ---
 st.set_page_config(page_title="Deep Stats 2026", layout="wide")
@@ -13,7 +13,6 @@ def load_data():
         data.columns = [col.strip() for col in data.columns]
         data = data.dropna(subset=['response.fixture.id'])
         
-        # Lista på alla kolumner för "tvätt"
         cols_to_clean = [
             'response.goals.home', 'response.goals.away', 'xG Hemma', 'xG Borta',
             'Gula kort Hemma', 'Gula Kort Borta', 'Röda Kort Hemma', 'Röda Kort Borta',
@@ -41,12 +40,10 @@ df = load_data()
 if df is not None:
     tab1, tab2 = st.tabs(["⚽ Matcher", "🛡️ Djupgående Lagstatistik"])
 
-    # --- FLIK 1: MATCHER (VISAR ALLT, ÄVEN KOMMANDE) ---
     with tab1:
         st.title("Matchlista")
         st.dataframe(df[['response.fixture.date', 'response.teams.home.name', 'response.teams.away.name', 'response.fixture.status.short', 'response.goals.home', 'response.goals.away']].sort_values('response.fixture.date'), use_container_width=True)
 
-    # --- FLIK 2: DJUPANALYS (TOTALT, HEMMA, BORTA) ---
     with tab2:
         HOME_COL = 'response.teams.home.name'
         AWAY_COL = 'response.teams.away.name'
@@ -63,7 +60,6 @@ if df is not None:
             num_matches = st.radio("Urval:", ["Samtliga", "Senaste 20"], horizontal=True)
 
         if selected_team:
-            # Filtrera för spelade matcher
             stats_df = df[((df[HOME_COL] == selected_team) | (df[AWAY_COL] == selected_team)) & (df['response.fixture.status.short'] == 'FT')].copy()
             if selected_season != "Alla":
                 stats_df = stats_df[stats_df[SEASON_COL] == selected_season]
@@ -75,10 +71,9 @@ if df is not None:
                 def map_row(row):
                     is_h = row[HOME_COL] == team_name
                     s = " Hemma" if is_h else " Borta"
-                    # Fix för Gula kort namngivning
                     g_key = "Gula kort Hemma" if is_h else "Gula Kort Borta"
                     return pd.Series({
-                        'Gjorda Mål': row['response.goals.home'] if is_h else row['response.goals.away'],
+                        'Mål': row['response.goals.home'] if is_h else row['response.goals.away'],
                         'xG': row.get(f'xG{s}', 0),
                         'Hörnor': row.get(f'Hörnor{s}', 0),
                         'Bollinnehav': row.get(f'Bollinnehav{s}', 0),
@@ -100,56 +95,45 @@ if df is not None:
 
             def display_stat_block(label, data_series, count):
                 st.subheader(f"{label} ({count} matcher)")
-                # Huvud-KPIs
-                kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-                kpi1.metric("Mål", data_series['Gjorda Mål'])
-                kpi2.metric("xG", data_series['xG'])
-                kpi3.metric("Hörnor", data_series['Hörnor'])
-                kpi4.metric("Boll", f"{data_series['Bollinnehav']}%")
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Mål", data_series['Mål'])
+                k2.metric("xG", data_series['xG'])
+                k3.metric("Hörnor", data_series['Hörnor'])
+                k4.metric("Boll", f"{data_series['Bollinnehav']}%")
                 
-                # Detaljerad lista
                 with st.expander(f"Visa all statistik för {label.lower()}"):
-                    c_a, c_b, c_c = st.columns(3)
-                    with c_a:
+                    ca, cb, cc = st.columns(3)
+                    with ca:
                         st.write("**Anfall**")
                         st.write(f"Skott på mål: {data_series['Skott på mål']}")
                         st.write(f"Totala skott: {data_series['Totala Skott']}")
                         st.write(f"Skott i box: {data_series['Skott i Box']}")
-                        st.write(f"Skott utanför box: {data_series['Skott utanför Box']}")
-                        st.write(f"Blockerade skott: {data_series['Blockerade Skott']}")
-                    with c_b:
-                        st.write("**Passningar & Spel**")
+                    with cb:
+                        st.write("**Speluppbyggnad**")
                         st.write(f"Passningar: {data_series['Passningar']}")
-                        st.write(f"Passningssäkerhet: {data_series['Passningssäkerhet']}%")
+                        st.write(f"Säkerhet: {data_series['Passningssäkerhet']}%")
                         st.write(f"Offside: {data_series['Offside']}")
-                        st.write(f"Räddningar: {data_series['Räddningar']}")
-                    with c_c:
-                        st.write("**Disciplin**")
+                    with cc:
+                        st.write("**Defensiv/Disciplin**")
                         st.write(f"Fouls: {data_series['Fouls']}")
                         st.write(f"Gula kort: {data_series['Gula Kort']}")
-                        st.write(f"Röda kort: {data_series['Röda Kort']}")
+                        st.write(f"Räddningar: {data_series['Räddningar']}")
 
-            # --- RITNING AV DE TRE SEKTIONERNA ---
-            
             # 1. TOTALT
             avg_total = get_full_stats(stats_df, selected_team)
             display_stat_block("TOTALT", avg_total, len(stats_df))
             
             st.divider()
             
-            # 2. HEMMA & BORTA SIDA VID SIDA
+            # 2. HEMMA & BORTA
             col_h, col_a = st.columns(2)
-            
             with col_h:
                 h_df = stats_df[stats_df[HOME_COL] == selected_team]
                 if not h_df.empty:
                     avg_h = get_full_stats(h_df, selected_team)
                     display_stat_block("🏠 HEMMA", avg_h, len(h_df))
-                else: st.info("Inga hemmamatcher.")
-
             with col_a:
                 a_df = stats_df[stats_df[AWAY_COL] == selected_team]
                 if not a_df.empty:
                     avg_a = get_full_stats(a_df, selected_team)
                     display_stat_block("✈️ BORTA", avg_a, len(a_df))
-                else: st.info("Inga bortamatcher.")
