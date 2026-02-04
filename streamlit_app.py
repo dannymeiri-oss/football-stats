@@ -70,39 +70,54 @@ if df is not None:
                         'Mål': row['response.goals.home'] if is_h else row['response.goals.away'],
                         'xG': row.get(f'xG{s}', 0), 'Hörnor': row.get(f'Hörnor{s}', 0), 'Boll': row.get(f'Bollinnehav{s}', 0),
                         'S_mål': row.get(f'Skott på mål{s}', 0), 'S_tot': row.get(f'Total Skott{s}', 0),
-                        'S_ut': row.get(f'Skott Utanför{s}', 0), 'S_block': row.get(f'Blockerade Skott{s}', 0),
-                        'S_box': row.get(f'Skott i Box{s}', 0), 'S_ut_box': row.get(f'Skott utanför Box{s}', 0),
-                        'Pass': row.get(f'Passningar{s}', 0), 'Pass_%': row.get(f'Passningssäkerhet{s}', 0),
-                        'Fouls': row.get(f'Fouls{s}', 0), 'Gula': row.get(g_key, 0), 'Röda': row.get(f'Röda Kort{s}', 0),
-                        'Offside': row.get(f'Offside{s}', 0), 'Räddningar': row.get(f'Räddningar{s}', 0)
+                        'S_box': row.get(f'Skott i Box{s}', 0), 'Pass': row.get(f'Passningar{s}', 0),
+                        'Pass_%': row.get(f'Passningssäkerhet{s}', 0), 'Fouls': row.get(f'Fouls{s}', 0),
+                        'Gula': row.get(g_key, 0), 'Offside': row.get(f'Offside{s}', 0), 'Rädd': row.get(f'Räddningar{s}', 0)
                     })
                 return target_df.apply(map_row, axis=1).mean().round(2)
 
-            def render_stat_grid(data):
-                # Rad 1
+            def render_block(title, data, bg_color="#ffffff"):
+                if data is None: return
+                # Titel och huvud-metrics
+                st.markdown(f"### {title}")
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Mål", data['Mål']); c2.metric("xG", data['xG']); c3.metric("Hörnor", data['Hörnor']); c4.metric("Bollinnehav", f"{data['Boll']}%")
-                # Rad 2
-                c5, c6, c7, c8 = st.columns(4)
-                c5.metric("Skott på mål", data['S_mål']); c6.metric("Totala skott", data['S_tot']); c7.metric("Skott i box", data['S_box']); c8.metric("Blockerade skott", data['S_block'])
-                # Rad 3
-                c9, c10, c11, c12 = st.columns(4)
-                c9.metric("Skott Utanför", data['S_ut']); c10.metric("Skott utanför Box", data['S_ut_box']); c11.metric("Passningar", data['Pass']); c12.metric("Passningssäkerhet", f"{data['Pass_%']}%")
-                # Rad 4
-                c13, c14, c15, c16 = st.columns(4)
-                c13.metric("Gula kort", data['Gula']); c14.metric("Fouls", data['Fouls']); c15.metric("Offside", data['Offside']); c16.metric("Räddningar", data['Räddningar'])
+                c1.metric("Mål", data['Mål']); c2.metric("xG", data['xG']); c3.metric("Hörnor", data['Hörnor']); c4.metric("Boll", f"{data['Boll']}%")
+                
+                # Öppen detaljbox (inga expanders)
+                st.markdown(f"""
+                <div style="background-color: {bg_color}; padding: 20px; border-radius: 10px; border: 1px solid #ddd; margin-bottom: 25px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <div style="flex: 1;">
+                            <p><b>Anfall</b></p>
+                            <p>Skott på mål: {data['S_mål']}</p>
+                            <p>Totala skott: {data['S_tot']}</p>
+                            <p>Skott i box: {data['S_box']}</p>
+                        </div>
+                        <div style="flex: 1;">
+                            <p><b>Speluppbyggnad</b></p>
+                            <p>Passningar: {data['Pass']}</p>
+                            <p>Säkerhet: {data['Pass_%']}%</p>
+                            <p>Offside: {data['Offside']}</p>
+                        </div>
+                        <div style="flex: 1;">
+                            <p><b>Defensiv/Disciplin</b></p>
+                            <p>Fouls: {data['Fouls']}</p>
+                            <p>Gula kort: {data['Gula']}</p>
+                            <p>Räddningar: {data['Rädd']}</p>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
             avg_t = get_full_metrics(s_df, selected_team)
             avg_h = get_full_metrics(s_df[s_df[HOME_COL] == selected_team], selected_team)
             avg_a = get_full_metrics(s_df[s_df[AWAY_COL] == selected_team], selected_team)
 
-            st.header(f"📊 TOTALT ({len(s_df)} matcher)")
-            render_stat_grid(avg_t)
+            # RENDERING
+            render_block(f"Totalstatistik ({len(s_df)} matcher)", avg_t)
             
-            st.markdown("---")
-            st.header(f"🏠 HEMMA ({len(s_df[s_df[HOME_COL] == selected_team])} matcher)")
-            render_stat_grid(avg_h)
-            
-            st.markdown("---")
-            st.header(f"✈️ BORTA ({len(s_df[s_df[AWAY_COL] == selected_team])} matcher)")
-            render_stat_grid(avg_a)
+            col_left, col_right = st.columns(2)
+            with col_left:
+                render_block("🏠 HEMMA", avg_h, bg_color="#f0f7ff")
+            with col_right:
+                render_block("✈️ BORTA", avg_a, bg_color="#f0fff4")
