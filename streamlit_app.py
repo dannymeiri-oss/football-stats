@@ -16,13 +16,16 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv
 RAW_DATA_URL = f"{BASE_URL}&gid={GID_RAW}"
 STANDINGS_URL = f"{BASE_URL}&gid={GID_STANDINGS}"
 
-# --- 2. ODDS-FUNKTIONER ---
+# --- 2. ODDS-FUNKTIONER (MED FELHANTERING FÖR KVOTA) ---
 @st.cache_data(ttl=600)
 def fetch_all_odds():
     if not ODDS_API_KEY: return None
     url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h,totals&bookmakers=unibet"
     try:
         res = requests.get(url)
+        if res.status_code == 429:
+            st.warning("Odds-kvoten är slut för denna månad (500/500).")
+            return None
         return res.json() if res.status_code == 200 else None
     except: return None
 
@@ -91,7 +94,7 @@ if df is not None:
     years = sorted(df['Säsong'].unique(), reverse=True)
     year_options = ["Alla säsonger"] + [str(y) for y in years]
 
-    # --- VY: STATISTIK FÖR SPELAD MATCH ---
+    # VY: STATISTIK FÖR SPELAD MATCH
     if st.session_state.view_match is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_match = None
@@ -111,7 +114,7 @@ if df is not None:
                 stat_comparison_row("Bollinnehav", int(r['Bollinnehav Hemma']), int(r['Bollinnehav Borta']), True)
                 stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
 
-    # --- VY: H2H ANALYS FÖR KOMMANDE MATCH ---
+    # VY: H2H ANALYS FÖR KOMMANDE MATCH
     elif st.session_state.view_h2h is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_h2h = None
@@ -186,7 +189,6 @@ if df is not None:
             for idx, r in d_df.sort_values('datetime', ascending=(mode=="Nästa 50 matcher")).head(50).iterrows():
                 h_name, a_name = r['response.teams.home.name'], r['response.teams.away.name']
                 
-                # Alert-logik för Gula Kort
                 show_alert = False
                 if mode == "Nästa 50 matcher":
                     h_c = df[df['response.teams.home.name'] == h_name]['Gula kort Hemma'].mean()
