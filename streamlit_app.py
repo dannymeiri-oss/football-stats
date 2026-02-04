@@ -7,6 +7,7 @@ from datetime import datetime
 # --- 1. KONFIGURATION & NYCKLAR ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide", initial_sidebar_state="collapsed")
 
+# Din fungerande API-nyckel
 API_KEY = "6343cd4636523af501b585a1b595ad26"
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
@@ -30,7 +31,7 @@ def fetch_pro_odds(fixture_id):
     except:
         return None
 
-# --- 3. DATAHANTERING ---
+# --- 3. DATAHANTERING (FULLSTÄNDIG GULD-STATISTIK) ---
 @st.cache_data(ttl=60)
 def load_and_clean_data(url):
     try:
@@ -39,12 +40,13 @@ def load_and_clean_data(url):
         if 'response.fixture.date' in data.columns:
             data['datetime'] = pd.to_datetime(data['response.fixture.date'], errors='coerce')
         
-        # Alla kolumner för Guld-versionen (Lag, Domare, xG)
+        # ALLA dina kolumner återställda
         numeric_cols = [
             'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
             'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta',
             'Domare Gula Kort Snitt', 'Domare Röda Kort Snitt',
-            'Hemma_Snitt_Mål', 'Borta_Snitt_Mål', 'Hemma_Vinst_Procent', 'Borta_Vinst_Procent'
+            'Hemma_Snitt_Mål', 'Borta_Snitt_Mål', 'Hemma_Vinst_Procent', 'Borta_Vinst_Procent',
+            'Hemma_xG_Skapade', 'Borta_xG_Skapade', 'Hemma_Farliga_Anfall', 'Borta_Farliga_Anfall'
         ]
         for col in numeric_cols:
             if col in data.columns:
@@ -90,17 +92,16 @@ if df is not None:
             st.session_state.view_h2h = None
             st.rerun()
         m = st.session_state.view_h2h
-        
         st.markdown(f"<h1 style='text-align: center;'>{m['response.teams.home.name']} vs {m['response.teams.away.name']}</h1>", unsafe_allow_html=True)
         
-        # 💸 ODDS (DIREKT-ANROP)
+        # 💸 ODDS DIREKT-ANROP (Hörnor & Kort inkluderat)
         with st.spinner('Hämtar Unibet PRO-odds...'):
             live_odds = fetch_pro_odds(m.get('response.fixture.id'))
         if live_odds:
             st.markdown("<div style='background:#f0f2f6; padding:15px; border-radius:10px;'>", unsafe_allow_html=True)
             o1, o2, o3 = st.columns(3)
             with o1:
-                st.write("**1X2**")
+                st.write("**1X2 (Unibet)**")
                 for o in live_odds.get('1X2', []): st.write(f"{o['value']}: **{o['odd']}**")
             with o2:
                 st.write("**Hörnor (Ö 9.5)**")
@@ -113,16 +114,14 @@ if df is not None:
             st.markdown("</div>", unsafe_allow_html=True)
 
         st.divider()
-        
-        # 🛡️ LAGSTATISTIK (GULD-BLOCK)
         st.subheader("🛡️ Lagstatistik (Säsongssnitt)")
         stat_comparison_row("Mål per match", m.get('Hemma_Snitt_Mål',0), m.get('Borta_Snitt_Mål',0), is_dec=True)
         stat_comparison_row("Vinstprocent", int(m.get('Hemma_Vinst_Procent',0)), int(m.get('Borta_Vinst_Procent',0)), is_pct=True)
+        stat_comparison_row("Farliga Anfall", int(m.get('Hemma_Farliga_Anfall',0)), int(m.get('Borta_Farliga_Anfall',0)))
         
-        # ⚖️ DOMARSTATISTIK (GULD-BLOCK)
         st.divider()
         st.subheader("⚖️ Domarprofil")
-        domare = m.get('response.fixture.referee', 'Okänd Domare')
+        domare = m.get('response.fixture.referee', 'Data saknas')
         st.info(f"Domare: **{domare}**")
         c1, c2 = st.columns(2)
         c1.metric("Gula Kort Snitt", f"{m.get('Domare Gula Kort Snitt', 0):.2f}")
@@ -137,8 +136,6 @@ if df is not None:
             future_df = df[df['response.fixture.status.short'] == 'NS'].sort_values('datetime')
             for idx, r in future_df.head(25).iterrows():
                 h_name, a_name = r['response.teams.home.name'], r['response.teams.away.name']
-                
-                # 🔔 Varningsklocka för Kort (Logik bevarad)
                 h_c_avg = df[df['response.teams.home.name'] == h_name]['Gula kort Hemma'].mean()
                 a_c_avg = df[df['response.teams.away.name'] == a_name]['Gula Kort Borta'].mean()
                 show_alert = (np.nan_to_num(h_c_avg) + np.nan_to_num(a_c_avg)) >= 3.4
@@ -147,9 +144,9 @@ if df is not None:
                 with c_info:
                     st.markdown(f'''
                         <div style="background:white; padding:10px; border-radius:8px; border:1px solid #eee; margin-bottom:5px; display:flex; align-items:center;">
-                            <div style="width:70px; font-size:0.8em; color:gray;">{r["datetime"].strftime("%H:%M")}</div>
+                            <div style="width:70px; font-size:0.8em; color:gray;">{r["datetime"].strftime("%H:%M") if pd.notnull(r["datetime"]) else ""}</div>
                             <div style="flex:1; text-align:right; font-weight:bold;">{h_name} <img src="{r.get('response.teams.home.logo','')}" width="22"></div>
-                            <div style="background:#f0f0f0; color:#333; padding:2px 12px; margin:0 20px; border-radius:4px; font-weight:bold;">VS</div>
+                            <div style="background:#f0f0f0; color:#333; padding:2px 12px; margin:0 15px; border-radius:4px; font-weight:bold;">VS</div>
                             <div style="flex:1; text-align:left; font-weight:bold;"><img src="{r.get('response.teams.away.logo','')}" width="22"> {a_name}</div>
                             <div style="width:30px; text-align:center;">{"🔔" if show_alert else ""}</div>
                         </div>
@@ -167,9 +164,9 @@ if df is not None:
                     score = f"{int(r.get('response.goals.home',0))} - {int(r.get('response.goals.away',0))}"
                     st.markdown(f'''
                         <div style="background:#f9f9f9; padding:10px; border-radius:8px; border:1px solid #eee; margin-bottom:5px; display:flex; align-items:center;">
-                            <div style="width:70px; font-size:0.8em; color:gray;">{r["datetime"].strftime("%d %b")}</div>
+                            <div style="width:70px; font-size:0.8em; color:gray;">{r["datetime"].strftime("%d %b") if pd.notnull(r["datetime"]) else ""}</div>
                             <div style="flex:1; text-align:right;">{r['response.teams.home.name']}</div>
-                            <div style="background:#222; color:white; padding:2px 12px; margin:0 20px; border-radius:4px; font-weight:bold;">{score}</div>
+                            <div style="background:#222; color:white; padding:2px 12px; margin:0 15px; border-radius:4px; font-weight:bold;">{score}</div>
                             <div style="flex:1; text-align:left;">{r['response.teams.away.name']}</div>
                         </div>
                     ''', unsafe_allow_html=True)
@@ -178,4 +175,4 @@ if df is not None:
                         st.session_state.view_match = r
                         st.rerun()
 else:
-    st.error("Kunde inte ladda data.")
+    st.error("Laddar...")
