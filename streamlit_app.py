@@ -4,7 +4,7 @@ import requests
 from datetime import datetime
 import numpy as np
 
-# --- 1. KONFIGURATION (GULD-VERSION 2.1 - FIXAD & SÄKER) ---
+# --- 1. KONFIGURATION (PERFEKT LAYOUT) ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
 st.markdown("""
@@ -18,7 +18,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-title'>Guld Version - Optimerad & Felfri</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-title'>Perfekt Layout - Kortanalys Aktiv</p>", unsafe_allow_html=True)
 
 API_KEY = "6343cd4636523af501b585a1b595ad26" 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
@@ -44,7 +44,6 @@ def clean_stats(data):
         data['datetime'] = pd.to_datetime(data['response.fixture.date'], errors='coerce')
         data['Säsong'] = data['datetime'].dt.year.fillna(0).astype(int)
     
-    # Lista på alla viktiga kolumner vi vill jobba med
     numeric_cols = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
         'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta', 
@@ -57,7 +56,6 @@ def clean_stats(data):
         if col in data.columns:
             data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0)
         else:
-            # Om kolumnen saknas i Google Sheets, skapa den som 0 så koden inte krashar
             data[col] = 0.0
             
     data['ref_clean'] = data.get('response.fixture.referee', "Okänd").fillna("Okänd").apply(lambda x: str(x).split(',')[0].strip())
@@ -82,7 +80,6 @@ if df is not None:
     years = sorted(df['Säsong'].unique(), reverse=True)
     year_options = ["Alla säsonger"] + [str(y) for y in years]
 
-    # --- MATCH-DETALJER ---
     if st.session_state.view_match is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_match = None
@@ -95,7 +92,6 @@ if df is not None:
         stat_comparison_row("Hörnor", int(r['Hörnor Hemma']), int(r['Hörnor Borta']))
         stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
 
-    # --- H2H ANALYS ---
     elif st.session_state.view_h2h is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_h2h = None
@@ -118,7 +114,6 @@ if df is not None:
         stat_comparison_row("xG/Match", round(h_stats['xG Hemma'].mean(), 2), round(a_stats['xG Borta'].mean(), 2))
         stat_comparison_row("Hörnor snitt", round(h_stats['Hörnor Hemma'].mean(), 1), round(a_stats['Hörnor Borta'].mean(), 1))
 
-    # --- TABS ---
     else:
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell"])
         
@@ -131,9 +126,10 @@ if df is not None:
                 
                 show_alert = False
                 if mode == "Nästa matcher":
-                    h_avg = df[df['response.teams.home.name'] == h_name]['response.goals.home'].mean()
-                    a_avg = df[df['response.teams.away.name'] == a_name]['response.goals.away'].mean()
-                    if (np.nan_to_num(h_avg) + np.nan_to_num(a_avg)) > 3.4: show_alert = True
+                    # --- NY LOGIK: GULA KORT ISTÄLLET FÖR MÅL ---
+                    h_card_avg = df[df['response.teams.home.name'] == h_name]['Gula kort Hemma'].mean()
+                    a_card_avg = df[df['response.teams.away.name'] == a_name]['Gula Kort Borta'].mean()
+                    if (np.nan_to_num(h_card_avg) + np.nan_to_num(a_card_avg)) > 3.4: show_alert = True
 
                 c_i, c_b = st.columns([4.2, 1.8]) 
                 score_text = f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}" if mode=="Resultat" else "VS"
@@ -203,7 +199,6 @@ if df is not None:
                     c[0].metric("Matcher", len(r_df))
                     c[1].metric("Gula/Match", round((r_df['Gula kort Hemma'] + r_df['Gula Kort Borta']).mean(), 2))
                     c[2].metric("Fouls/Match", round((r_df['Fouls Hemma'] + r_df['Fouls Borta']).mean(), 2))
-                    # Här fanns felet - nu med extra säkerhet:
                     straffar_total = r_df['Straffar Hemma'].sum() + r_df['Straffar Borta'].sum()
                     c[3].metric("Straffar", int(straffar_total))
                     
