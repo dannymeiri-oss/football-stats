@@ -149,4 +149,88 @@ if df is not None:
                         'xG': row.get(f'xG{s}', 0), 'Hörnor': row.get(f'Hörnor{s}', 0), 'Boll': row.get(f'Bollinnehav{s}', 0),
                         'S_mål': row.get(f'Skott på mål{s}', 0), 'S_tot': row.get(f'Total Skott{s}', 0),
                         'S_box': row.get(f'Skott i Box{s}', 0), 'Pass': row.get(f'Passningar{s}', 0),
-                        'Pass_%': row.get(f'Passningssäkerhet{s}', 0), 'Fouls':
+                        'Pass_%': row.get(f'Passningssäkerhet{s}', 0), 'Fouls': row.get(f'Fouls{s}', 0),
+                        'Gula': row.get(g_key, 0), 'Offside': row.get(f'Offside{s}', 0), 'Rädd': row.get(f'Räddningar{s}', 0),
+                        'Straff': row.get(f'Straffar{s}', 0)
+                    })
+                return target_df.apply(map_row, axis=1).mean().round(2)
+
+            def render_lag_block(title, data, bg_color="#ffffff"):
+                if data is None: return
+                st.markdown(f"### {title}")
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Mål", data['Mål']); c2.metric("xG", data['xG']); c3.metric("Hörnor", data['Hörnor']); c4.metric("Boll", f"{data['Boll']}%")
+                
+                st.markdown(f"""
+                <div style="background-color: {bg_color}; padding: 20px; border-radius: 10px; border: 1px solid #ddd; margin-bottom: 25px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <div style="flex: 1;">
+                            <p><b>Anfall</b></p>
+                            <p>Skott på mål: {data['S_mål']}</p>
+                            <p>Skott i box: {data['S_box']}</p>
+                            <p>Straffar: {data['Straff']}</p>
+                        </div>
+                        <div style="flex: 1;">
+                            <p><b>Spel</b></p>
+                            <p>Passningar: {data['Pass']}</p>
+                            <p>Säkerhet: {data['Pass_%']}%</p>
+                            <p>Offside: {data['Offside']}</p>
+                        </div>
+                        <div style="flex: 1;">
+                            <p><b>Disciplin</b></p>
+                            <p>Fouls: {data['Fouls']}</p>
+                            <p>Gula kort: {data['Gula']}</p>
+                            <p>Räddningar: {data['Rädd']}</p>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            avg_t = get_full_metrics(s_df, selected_team)
+            avg_h = get_full_metrics(s_df[s_df[HOME_COL] == selected_team], selected_team)
+            avg_a = get_full_metrics(s_df[s_df[AWAY_COL] == selected_team], selected_team)
+
+            render_lag_block(f"Totalstatistik ({len(s_df)} matcher)", avg_t)
+            cl, cr = st.columns(2)
+            with cl: render_lag_block("🏠 HEMMA", avg_h, bg_color="#f0f7ff")
+            with cr: render_lag_block("✈️ BORTA", avg_a, bg_color="#f0fff4")
+
+    # --- FLIK 3: DOMARANALYS ---
+    with tab3:
+        REF_COL = 'response.fixture.referee'
+        if REF_COL in df.columns:
+            df[REF_COL] = df[REF_COL].fillna("Okänd").apply(lambda x: str(x).split(',')[0].strip())
+            selected_ref = st.selectbox("Välj domare:", sorted(df[REF_COL].unique()))
+            
+            if selected_ref:
+                r_df = df[df[REF_COL] == selected_ref].copy()
+                avg_y = (r_df['Gula kort Hemma'] + r_df['Gula Kort Borta']).mean().round(2)
+                avg_f = (r_df['Fouls Hemma'] + r_df['Fouls Borta']).mean().round(2)
+                avg_p = (r_df['Straffar Hemma'] + r_df['Straffar Borta']).mean().round(2)
+
+                st.header(f"⚖️ {selected_ref}")
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("Matcher", len(r_df))
+                m2.metric("Gula / Match", avg_y)
+                m3.metric("Fouls / Match", avg_f)
+                m4.metric("Straffar / Match", avg_p)
+
+                st.markdown(f"""
+                <div style="background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #ddd; margin-top: 20px;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <div style="flex: 1;">
+                            <p><b>Hemmaplan (Snitt)</b></p>
+                            <p>Gula: {r_df['Gula kort Hemma'].mean().round(2)}</p>
+                            <p>Fouls: {r_df['Fouls Hemma'].mean().round(2)}</p>
+                            <p>Straffar (Tot): {int(r_df['Straffar Hemma'].sum())}</p>
+                        </div>
+                        <div style="flex: 1;">
+                            <p><b>Bortaplan (Snitt)</b></p>
+                            <p>Gula: {r_df['Gula Kort Borta'].mean().round(2)}</p>
+                            <p>Fouls: {r_df['Fouls Borta'].mean().round(2)}</p>
+                            <p>Straffar (Tot): {int(r_df['Straffar Borta'].sum())}</p>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                st.dataframe(r_df[['response.fixture.date', 'response.teams.home.name', 'response.teams.away.name', 'response.goals.home', 'response.goals.away']], use_container_width=True)
