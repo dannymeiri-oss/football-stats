@@ -16,11 +16,10 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv
 RAW_DATA_URL = f"{BASE_URL}&gid={GID_RAW}"
 STANDINGS_URL = f"{BASE_URL}&gid={GID_STANDINGS}"
 
-# --- 2. ODDS-FUNKTIONER (NU FÖR ALLA STORA LIGOR) ---
+# --- 2. ODDS-FUNKTIONER ---
 @st.cache_data(ttl=600)
 def fetch_all_odds():
     if not ODDS_API_KEY: return None
-    # Vi hämtar odds för 'soccer' generellt för att täcka alla ligor i din lista
     url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h,totals&bookmakers=unibet"
     try:
         res = requests.get(url)
@@ -62,11 +61,6 @@ def clean_stats(data):
         'Gula kort Hemma', 'Gula Kort Borta', 'Röda Kort Hemma', 'Röda Kort Borta',
         'Skott på mål Hemma', 'Skott på mål Borta', 'Hörnor Hemma', 'Hörnor Borta',
         'Fouls Hemma', 'Fouls Borta', 'Total Skott Hemma', 'Total Skott Borta',
-        'Skott Utanför Hemma', 'Skott Utanför Borta', 'Blockerade Skott Hemma', 'Blockerade Skott Borta',
-        'Skott i Box Hemma', 'Skott i Box Borta', 'Skott utanför Box Hemma', 'Skott utanför Box Borta',
-        'Passningar Hemma', 'Passningar Borta', 'Passningssäkerhet Hemma', 'Passningssäkerhet Borta',
-        'Offside Hemma', 'Offside Borta', 'Räddningar Hemma', 'Räddningar Borta',
-        'Straffar Hemma', 'Straffar Borta',
         'response.goals.home', 'response.goals.away', 'response.fixture.status.short',
         'response.teams.home.logo', 'response.teams.away.logo', 'response.fixture.referee',
         'response.teams.home.name', 'response.teams.away.name'
@@ -113,7 +107,6 @@ if df is not None:
                 stat_comparison_row("Hörnor", int(r['Hörnor Hemma']), int(r['Hörnor Borta']))
             with c2:
                 st.subheader("Matchfakta")
-                stat_comparison_row("Bollinnehav", int(r['Bollinnehav Hemma']), int(r['Bollinnehav Borta']), True)
                 stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
 
     elif st.session_state.view_h2h is not None:
@@ -156,12 +149,6 @@ if df is not None:
                             for o in totals:
                                 label = "Över" if o['name'].lower() == "over" else "Under"
                                 st.write(f"{label} 2.5: **{o['price']}**")
-                
-                st.divider()
-                st.markdown("<h3 style='text-align: center;'>📊 Lagjämförelse (Snitt Hemma vs Borta)</h3>", unsafe_allow_html=True)
-                cols = [("Mål", 'response.goals.home', 'response.goals.away'), ("xG", 'xG Hemma', 'xG Borta'), ("Bollinnehav", 'Bollinnehav Hemma', 'Bollinnehav Borta'), ("Skott på mål", 'Skott på mål Hemma', 'Skott på mål Borta'), ("Hörnor", 'Hörnor Hemma', 'Hörnor Borta'), ("Fouls", 'Fouls Hemma', 'Fouls Borta'), ("Gula Kort", 'Gula kort Hemma', 'Gula Kort Borta')]
-                for label, h_col, a_col in cols:
-                    stat_comparison_row(label, round(h_stats[h_col].mean(), 2), round(a_stats[a_col].mean(), 2), "Bollinnehav" in label)
 
     else:
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Matcher", "🛡️ Lagstatistik", "⚖️ Domaranalys", "🏆 Tabell"])
@@ -171,19 +158,28 @@ if df is not None:
             m_col, s_col = st.columns(2)
             mode = m_col.radio("Visa:", ["Nästa 50 matcher", "Senaste resultaten"], horizontal=True)
             search = s_col.text_input("Sök lag:", "", key="search_main")
+            
+            # Filtrera data för listan
             d_df = df[df['response.fixture.status.short'] == ('NS' if mode == "Nästa 50 matcher" else 'FT')]
             if search:
                 d_df = d_df[(d_df['response.teams.home.name'].str.contains(search, case=False)) | (d_df['response.teams.away.name'].str.contains(search, case=False))]
             
+            # Renderar matchlistan
             for idx, r in d_df.sort_values('datetime', ascending=(mode=="Nästa 50 matcher")).head(50).iterrows():
                 h_name, a_name = r['response.teams.home.name'], r['response.teams.away.name']
                 
-                # --- BERÄKNA ALERT ---
+                # --- BERÄKNA ALERT (FÖRBÄTTRAD LOGIK) ---
                 show_alert = False
                 if mode == "Nästa 50 matcher":
+                    # Räknar snitt baserat på historik i DF
                     h_avg = df[df['response.teams.home.name'] == h_name]['response.goals.home'].mean()
                     a_avg = df[df['response.teams.away.name'] == a_name]['response.goals.away'].mean()
-                    if (pd.Series(h_avg).fillna(0).iloc[0] + pd.Series(a_avg).fillna(0).iloc[0]) > 3.4:
+                    
+                    # Säkerställ att vi har siffror (ersätt NaN med 0)
+                    h_val = 0 if pd.isna(h_avg) else h_avg
+                    a_val = 0 if pd.isna(a_avg) else a_avg
+                    
+                    if (h_val + a_val) > 3.4:
                         show_alert = True
 
                 c_i, c_b = st.columns([5, 1.2])
@@ -192,7 +188,6 @@ if df is not None:
                     st.markdown(f'<div style="background:white; padding:10px; border-radius:8px; border:1px solid #eee; margin-bottom:5px; display:flex; align-items:center;"><div style="width:80px; font-size:0.8em;">{r["datetime"].strftime("%d %b")}</div><div style="flex:1; text-align:right; font-weight:bold;">{h_name} <img src="{r["response.teams.home.logo"]}" width="18"></div><div style="background:#222; color:white; padding:2px 8px; margin:0 10px; border-radius:4px; min-width:50px; text-align:center;">{score}</div><div style="flex:1; text-align:left; font-weight:bold;"><img src="{r["response.teams.away.logo"]}" width="18"> {a_name}</div></div>', unsafe_allow_html=True)
                 
                 with c_b:
-                    # Skapar en horisontell layout för knapp + symbol
                     btn_col, icon_col = st.columns([1, 0.4])
                     with btn_col:
                         if st.button("H2H" if mode == "Nästa 50 matcher" else "Statistik", key=f"btn{idx}", use_container_width=True):
@@ -201,7 +196,7 @@ if df is not None:
                             st.rerun()
                     with icon_col:
                         if show_alert:
-                            st.markdown("<div style='font-size:1.5em; padding-top:5px;'>🔔</div>", unsafe_allow_html=True)
+                            st.markdown("<div style='font-size:1.5em; line-height:1.8;'>🔔</div>", unsafe_allow_html=True)
 
         with tab2:
             st.header("🛡️ Laganalys")
@@ -217,24 +212,10 @@ if df is not None:
                     tc = st.columns(5)
                     t_m = len(h_df) + len(a_df)
                     tc[0].metric("Matcher", t_m)
-                    tc[1].metric("Mål snitt", round((h_df['response.goals.home'].sum() + a_df['response.goals.away'].sum())/t_m, 2))
-                    tc[2].metric("xG snitt", round((h_df['xG Hemma'].sum() + a_df['xG Borta'].sum())/t_m, 2))
-                    tc[3].metric("Hörnor snitt", round((h_df['Hörnor Hemma'].sum() + a_df['Hörnor Borta'].sum())/t_m, 2))
-                    tc[4].metric("Gula snitt", round((h_df['Gula kort Hemma'].sum() + a_df['Gula Kort Borta'].sum())/t_m, 2))
-                st.divider()
-                col_h, col_a = st.columns(2)
-                with col_h:
-                    st.subheader("🏠 HEMMA")
-                    for lbl, col in [("Matcher Hemma", 'datetime'), ("Mål", 'response.goals.home'), ("xG", 'xG Hemma'), ("Bollinnehav", 'Bollinnehav Hemma'), ("Skott på mål", 'Skott på mål Hemma'), ("Hörnor", 'Hörnor Hemma'), ("Gula Kort", 'Gula kort Hemma'), ("Passnings%", 'Passningssäkerhet Hemma')]:
-                        if not h_df.empty:
-                            val = len(h_df) if lbl == "Matcher Hemma" else h_df[col].mean()
-                            st.metric(lbl, round(val, 1) if "%" not in lbl and lbl != "Matcher Hemma" else (f"{int(val)}%" if "%" in lbl else int(val)))
-                with col_a:
-                    st.subheader("✈️ BORTA")
-                    for lbl, col in [("Matcher Borta", 'datetime'), ("Mål", 'response.goals.away'), ("xG", 'xG Borta'), ("Bollinnehav", 'Bollinnehav Borta'), ("Skott på mål", 'Skott på mål Borta'), ("Hörnor", 'Hörnor Borta'), ("Gula Kort", 'Gula Kort Borta'), ("Passnings%", 'Passningssäkerhet Borta')]:
-                        if not a_df.empty:
-                            val = len(a_df) if lbl == "Matcher Borta" else a_df[col].mean()
-                            st.metric(lbl, round(val, 1) if "%" not in lbl and lbl != "Matcher Borta" else (f"{int(val)}%" if "%" in lbl else int(val)))
+                    tc[1].metric("Mål snitt", round((h_df['response.goals.home'].sum() + a_df['response.goals.away'].sum())/max(1,t_m), 2))
+                    tc[2].metric("xG snitt", round((h_df['xG Hemma'].sum() + a_df['xG Borta'].sum())/max(1,t_m), 2))
+                    tc[3].metric("Hörnor snitt", round((h_df['Hörnor Hemma'].sum() + a_df['Hörnor Borta'].sum())/max(1,t_m), 2))
+                    tc[4].metric("Gula snitt", round((h_df['Gula kort Hemma'].sum() + a_df['Gula Kort Borta'].sum())/max(1,t_m), 2))
 
         with tab3:
             st.header("⚖️ Domaranalys")
