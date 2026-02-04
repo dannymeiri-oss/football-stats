@@ -12,7 +12,8 @@ st.markdown("""
     <style>
     .stDataFrame { margin-left: auto; margin-right: auto; }
     [data-testid="stMetricValue"] { font-size: 1.8rem !important; }
-    .alert-bell { font-size: 1.2rem; text-align: center; margin-top: 5px; }
+    .alert-container { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
+    .bell-icon { font-size: 1.5rem; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -181,7 +182,7 @@ if df is not None:
                     a_c = df[df['response.teams.away.name'] == a_name]['Gula Kort Borta'].mean()
                     if (np.nan_to_num(h_c) + np.nan_to_num(a_c)) >= 3.4: show_alert = True
 
-                c_i, c_b = st.columns([5, 1.5])
+                c_i, c_b = st.columns([4, 2]) # Justerad bredd för att få plats med båda
                 score_text = f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}" if mode=="Resultat" else "VS"
                 
                 with c_i:
@@ -195,13 +196,16 @@ if df is not None:
                         </div>
                     ''', unsafe_allow_html=True)
                 with c_b:
-                    # H2H Knapp och Klocka på samma rad
-                    if st.button("H2H", key=f"btn{idx}", use_container_width=True):
-                        if mode=="Nästa matcher": st.session_state.view_h2h = r
-                        else: st.session_state.view_match = r
-                        st.rerun()
-                    if show_alert and mode == "Nästa matcher":
-                        st.markdown("<div class='alert-bell'>🔔</div>", unsafe_allow_html=True)
+                    # Klockan till HÖGER om knappen
+                    col_btn, col_bell = st.columns([3, 1])
+                    with col_btn:
+                        if st.button("H2H", key=f"btn{idx}", use_container_width=True):
+                            if mode=="Nästa matcher": st.session_state.view_h2h = r
+                            else: st.session_state.view_match = r
+                            st.rerun()
+                    with col_bell:
+                        if show_alert and mode == "Nästa matcher":
+                            st.markdown("<div style='padding-top:5px; font-size:1.5rem;'>🔔</div>", unsafe_allow_html=True)
 
         with tab2:
             if standings_df is not None: st.dataframe(standings_df, use_container_width=True)
