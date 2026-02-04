@@ -5,19 +5,10 @@ from datetime import datetime
 # 1. Grundinställningar
 st.set_page_config(page_title="Football Stats Pro", layout="wide")
 
-# 2. CSS för den snygga mallen
+# 2. CSS för din snygga mall (Matchar bilden du skickade)
 st.markdown("""
     <style>
-    /* Bakgrund och kort */
     .main { background-color: #f8f9fa; }
-    .stat-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
-    }
-    /* Mall-rader för statistik */
     .stat-row {
         display: flex;
         align-items: center;
@@ -36,22 +27,19 @@ st.markdown("""
     .stat-label {
         flex: 2;
         text-align: center;
-        background: #4e54f3; /* Den blå färgen från din bild */
+        background: #4e54f3;
         color: white;
         padding: 8px;
         margin: 0 10px;
         font-weight: bold;
         text-transform: uppercase;
-        font-size: 12px;
+        font-size: 11px;
         border-radius: 5px;
-        letter-spacing: 1px;
     }
     .score-display {
-        font-size: 48px;
+        font-size: 42px;
         font-weight: 900;
         text-align: center;
-        color: #1a1a1a;
-        margin: 10px 0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -62,20 +50,15 @@ CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYB9eRz1kLOPX8YewpfS
 def load_data():
     df = pd.read_csv(CSV_URL)
     df.columns = df.columns.str.strip()
+    # Försök konvertera datum för korrekt sortering
+    if 'response.fixture.date' in df.columns:
+        df['dt_obj'] = pd.to_datetime(df['response.fixture.date'], errors='coerce')
     return df
 
-# Funktion för att rita en rad i mallen
 def draw_stat_item(label, h_val, a_val, is_percent=False):
     h_str = f"{h_val}%" if is_percent else f"{h_val}"
     a_str = f"{a_val}%" if is_percent else f"{a_val}"
-    
-    st.markdown(f"""
-        <div class="stat-row">
-            <div class="stat-val-box">{h_str}</div>
-            <div class="stat-label">{label}</div>
-            <div class="stat-val-box">{a_str}</div>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="stat-row"><div class="stat-val-box">{h_str}</div><div class="stat-label">{label}</div><div class="stat-val-box">{a_str}</div></div>', unsafe_allow_html=True)
 
 try:
     df = load_data()
@@ -87,20 +70,28 @@ try:
     if st.session_state.page == 'list':
         st.title("🏆 Matchcenter")
         
-        mode = st.sidebar.radio("Visa:", ["Kommande", "Historik"])
+        # Uppdaterat filternamn här
+        mode = st.sidebar.radio("Visa matcher:", ["Kommande", "Senaste 30 Matcher"])
         search = st.sidebar.text_input("Sök lag...")
         
-        # Filtrering baserat på målkolumn (finns mål = historik)
-        if mode == "Historik":
-            display_df = df[df['response.goals.home'].notna()].sort_index(ascending=False)
+        # Logik för att visa Senaste 30 Matcher
+        if mode == "Senaste 30 Matcher":
+            # Filtrera fram de som har mål (spelade) och sortera på datum (senaste först)
+            display_df = df[df['response.goals.home'].notna()]
+            if 'dt_obj' in display_df.columns:
+                display_df = display_df.sort_values(by='dt_obj', ascending=False)
+            display_df = display_df.head(30)
         else:
+            # Kommande matcher
             display_df = df[df['response.goals.home'].isna()]
+            if 'dt_obj' in display_df.columns:
+                display_df = display_df.sort_values(by='dt_obj', ascending=True)
 
         if search:
             display_df = display_df[display_df['response.teams.home.name'].str.contains(search, case=False, na=False) | 
                                     display_df['response.teams.away.name'].str.contains(search, case=False, na=False)]
 
-        for i, row in display_df.head(30).iterrows():
+        for i, row in display_df.iterrows():
             with st.container():
                 c1, c2, c3, c4 = st.columns([1, 4, 2, 1.5])
                 with c1:
@@ -110,7 +101,7 @@ try:
                     st.markdown(f"**{row['response.teams.home.name']} - {row['response.teams.away.name']}**")
                     st.caption(f"{row.get('response.league.name', '')}")
                 with c3:
-                    if mode == "Historik":
+                    if mode == "Senaste 30 Matcher":
                         st.markdown(f"**{int(row['response.goals.home'])} - {int(row['response.goals.away'])}**")
                     else:
                         st.write(str(row.get('response.fixture.date', ''))[11:16])
@@ -121,68 +112,33 @@ try:
                         st.rerun()
                 st.divider()
 
-    # --- SIDA 2: ANALYSVY (DIN TEMPLATE) ---
+    # --- SIDA 2: ANALYSVY ---
     elif st.session_state.page == 'details':
         m = st.session_state.selected_match
-        
         if st.button("⬅ Tillbaka"):
             st.session_state.page = 'list'
             st.rerun()
 
-        # HEADER
-        st.markdown('<div class="stat-card">', unsafe_allow_html=True)
-        h_logo, h_name = m.get('response.teams.home.logo',''), m.get('response.teams.home.name','')
-        a_logo, a_name = m.get('response.teams.away.logo',''), m.get('response.teams.away.name','')
-        
-        header_col1, header_col2, header_col3 = st.columns([2, 2, 2])
-        with header_col1:
-            st.image(h_logo, width=80)
-            st.subheader(h_name)
-        with header_col2:
+        st.markdown('<div style="background:white; padding:20px; border-radius:15px;">', unsafe_allow_html=True)
+        col_h, col_s, col_a = st.columns([2,2,2])
+        with col_h:
+            st.image(m.get('response.teams.home.logo',''), width=70)
+            st.write(f"**{m['response.teams.home.name']}**")
+        with col_s:
             h_g = m.get('response.goals.home')
-            if pd.notna(h_g):
-                st.markdown(f"<div class='score-display'>{int(h_g)} - {int(m['response.goals.away'])}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown("<div class='score-display'>VS</div>", unsafe_allow_html=True)
-            st.caption(f"<p style='text-align:center'>{m.get('response.league.name','')}</p>", unsafe_allow_html=True)
-        with header_col3:
-            st.image(a_logo, width=80)
-            st.subheader(a_name)
+            score_txt = f"{int(h_g)} - {int(m['response.goals.away'])}" if pd.notna(h_g) else "VS"
+            st.markdown(f"<div class='score-display'>{score_txt}</div>", unsafe_allow_html=True)
+        with col_a:
+            st.image(m.get('response.teams.away.logo',''), width=70)
+            st.write(f"**{m['response.teams.away.name']}**")
         
         st.divider()
-
-        # STATISTIK-MALLEN (Här mappar vi dina kolumner AV till CA)
-        # Vi använder .get() och sätter 0 som default om data saknas
-        st.markdown("### Matchstatistik")
+        st.write("### MATCH STATISTIC")
         
-        # Rad 1: Bollinnehav
-        draw_stat_item("Bollinnehav", m.get('Ball Possession_H', 0), m.get('Ball Possession_B', 0), is_percent=True)
-        
-        # Rad 2: Skott på mål
-        draw_stat_item("Skott på mål", m.get('Shots on Goal_H', 0), m.get('Shots on Goal_B', 0))
-        
-        # Rad 3: Totalt antal skott
-        draw_stat_item("Totala skott", m.get('Total Shots_H', 0), m.get('Total Shots_B', 0))
-        
-        # Rad 4: Hörnor
-        draw_stat_item("Hörnor", m.get('Corners_H', 0), m.get('Corners_B', 0))
-        
-        # Rad 5: Gula kort
-        draw_stat_item("Gula kort", m.get('Yellow Cards_H', 0), m.get('Yellow Cards_B', 0))
-
-        # Rad 6: Expected Goals (xG) - Den viktigaste!
-        draw_stat_item("Expected Goals (xG)", m.get('expected_goals_H', 0), m.get('expected_goals_B', 0))
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # Tabbar för extra info
-        t1, t2 = st.tabs(["H2H", "Info"])
-        with t1:
-            st.write("Tidigare möten visas här...")
-        with t2:
-            st.write(f"Arena: {m.get('response.fixture.venue.name','N/A')}")
-            st.write(f"Domare: {m.get('response.fixture.referee','N/A')}")
-
-except Exception as e:
-    st.error("Kunde inte ladda matchcenter just nu.")
-    st.write(e)
+        # Här hämtas de 32 parametrarna vi nyss fixade i Google Scriptet
+        # Se till att namnen matchar rubrikerna i din Raw Data-flik
+        draw_stat_item("Ball Possession", m.get('Ball Possession_H', 0), m.get('Ball Possession_B', 0), is_percent=True)
+        draw_stat_item("Shot on Target", m.get('Shots on Goal_H', 0), m.get('Shots on Goal_B', 0))
+        draw_stat_item("Total Shots", m.get('Total Shots_H', 0), m.get('Total Shots_B', 0))
+        draw_stat_item("Corners", m.get('Corners_H', 0), m.get('Corners_B', 0))
+        draw_stat_item("Fouls", m.get('Fouls_H', 0), m.get('
