@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --- 1. KONFIGURATION (PERFECT LAYOUT - STRICT RESTORE) ---
+# --- 1. KONFIGURATION (PERFECT LAYOUT - FULL RESTORE) ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
 st.markdown("""
@@ -19,7 +19,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-title'>Perfect Layout - Stabiliserad Version</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-title'>Perfect Layout - All Data Restored</p>", unsafe_allow_html=True)
 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
@@ -78,6 +78,7 @@ if df is not None:
         st.divider()
         stat_comparison_row("xG", round(r['xG Hemma'], 2), round(r['xG Borta'], 2))
         stat_comparison_row("Bollinnehav", int(r['Bollinnehav Hemma']), int(r['Bollinnehav Borta']), True)
+        stat_comparison_row("Skott på mål", int(r['Skott på mål Hemma']), int(r['Skott på mål Borta']))
         stat_comparison_row("Hörnor", int(r['Hörnor Hemma']), int(r['Hörnor Borta']))
         stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
 
@@ -85,7 +86,6 @@ if df is not None:
         if st.button("← Tillbaka"): st.session_state.view_mode = "main"; st.rerun()
         m = st.session_state.selected_match
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
-        
         st.markdown(f"<h2 class='centered-header'>{h_team} vs {a_team}</h2>", unsafe_allow_html=True)
         
         st.markdown(f"""<div class="odds-box">
@@ -125,8 +125,10 @@ if df is not None:
                 show_bell = False
                 if mode == "Nästa matcher":
                     hist = df[df['response.fixture.status.short'] == 'FT']
-                    h_avg = hist[(hist['response.teams.home.name'] == r['response.teams.home.name']) | (hist['response.teams.away.name'] == r['response.teams.home.name'])].apply(lambda x: x['Gula kort Hemma'] if x['response.teams.home.name'] == r['response.teams.home.name'] else x['Gula Kort Borta'], axis=1).mean()
-                    a_avg = hist[(hist['response.teams.home.name'] == r['response.teams.away.name']) | (hist['response.teams.away.name'] == r['response.teams.away.name'])].apply(lambda x: x['Gula kort Hemma'] if x['response.teams.home.name'] == r['response.teams.away.name'] else x['Gula Kort Borta'], axis=1).mean()
+                    h_total = hist[(hist['response.teams.home.name'] == r['response.teams.home.name']) | (hist['response.teams.away.name'] == r['response.teams.home.name'])]
+                    h_avg = h_total.apply(lambda x: x['Gula kort Hemma'] if x['response.teams.home.name'] == r['response.teams.home.name'] else x['Gula Kort Borta'], axis=1).mean()
+                    a_total = hist[(hist['response.teams.home.name'] == r['response.teams.away.name']) | (hist['response.teams.away.name'] == r['response.teams.away.name'])]
+                    a_avg = a_total.apply(lambda x: x['Gula kort Hemma'] if x['response.teams.home.name'] == r['response.teams.away.name'] else x['Gula Kort Borta'], axis=1).mean()
                     if (np.nan_to_num(h_avg) + np.nan_to_num(a_avg)) > 3.4: show_bell = True
 
                 col_info, col_btn = st.columns([4.5, 1.5])
@@ -155,21 +157,26 @@ if df is not None:
             if sel_team:
                 h_df = df[(df['response.teams.home.name'] == sel_team) & (df['response.fixture.status.short'] == 'FT')]
                 a_df = df[(df['response.teams.away.name'] == sel_team) & (df['response.fixture.status.short'] == 'FT')]
-                cols = st.columns(4)
                 tot = len(h_df) + len(a_df)
                 if tot > 0:
-                    cols[0].metric("Matcher", tot)
-                    cols[1].metric("Mål snitt", round((h_df['response.goals.home'].sum() + a_df['response.goals.away'].sum())/tot, 2))
-                    cols[2].metric("Gula snitt", round((h_df['Gula kort Hemma'].sum() + a_df['Gula Kort Borta'].sum())/tot, 2))
-                    cols[3].metric("Hörnor snitt", round((h_df['Hörnor Hemma'].sum() + a_df['Hörnor Borta'].sum())/tot, 1))
-                st.write("---")
-                ch, ca = st.columns(2)
-                with ch:
-                    st.subheader("Hemma")
-                    if not h_df.empty: st.metric("Bollinnehav", f"{int(h_df['Bollinnehav Hemma'].mean())}%")
-                with ca:
-                    st.subheader("Borta")
-                    if not a_df.empty: st.metric("Bollinnehav", f"{int(a_df['Bollinnehav Borta'].mean())}%")
+                    c = st.columns(4)
+                    c[0].metric("Matcher", tot)
+                    c[1].metric("Mål snitt", round((h_df['response.goals.home'].sum() + a_df['response.goals.away'].sum())/tot, 2))
+                    c[2].metric("Gula snitt", round((h_df['Gula kort Hemma'].sum() + a_df['Gula Kort Borta'].sum())/tot, 2))
+                    c[3].metric("Hörnor snitt", round((h_df['Hörnor Hemma'].sum() + a_df['Hörnor Borta'].sum())/tot, 1))
+                    
+                    st.write("---")
+                    col_h, col_a = st.columns(2)
+                    with col_h:
+                        st.subheader("🏠 HEMMA")
+                        for lbl, col in [("Mål", 'response.goals.home'), ("xG", 'xG Hemma'), ("Bollinnehav", 'Bollinnehav Hemma'), ("Skott på mål", 'Skott på mål Hemma'), ("Hörnor", 'Hörnor Hemma'), ("Gula Kort", 'Gula kort Hemma'), ("Passnings%", 'Passningssäkerhet Hemma')]:
+                            val = h_df[col].mean() if not h_df.empty else 0
+                            st.metric(lbl, f"{int(val)}%" if "%" in lbl else round(val, 1))
+                    with col_a:
+                        st.subheader("✈️ BORTA")
+                        for lbl, col in [("Mål", 'response.goals.away'), ("xG", 'xG Borta'), ("Bollinnehav", 'Bollinnehav Borta'), ("Skott på mål", 'Skott på mål Borta'), ("Hörnor", 'Hörnor Borta'), ("Gula Kort", 'Gula Kort Borta'), ("Passnings%", 'Passningssäkerhet Borta')]:
+                            val = a_df[col].mean() if not a_df.empty else 0
+                            st.metric(lbl, f"{int(val)}%" if "%" in lbl else round(val, 1))
 
         with tab3:
             st.header("⚖️ Domaranalys")
