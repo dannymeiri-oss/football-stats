@@ -106,7 +106,6 @@ if df is not None:
         a_stats = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
         
         if not h_stats.empty and not a_stats.empty:
-            # --- NY SEKTION: TOTAL FÖRVÄNTAN ---
             st.subheader("🎯 Total Förväntad Matchstatistik")
             tc1, tc2, tc3, tc4 = st.columns(4)
             
@@ -138,8 +137,15 @@ if df is not None:
         
         st.subheader("📜 Senaste möten")
         h2h_matches = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
+        
         if not h2h_matches.empty:
-            st.dataframe(h2h_matches[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']].sort_values('datetime', ascending=False), hide_index=True)
+            h2h_display = h2h_matches[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']].copy()
+            # Uppdaterat datumformat: 20 Feb 2025 19:00
+            h2h_display['datetime'] = h2h_display['datetime'].dt.strftime('%d %b %Y %H:%M')
+            # Nya headers: Datum, Hemmalag, , , Bortalag
+            h2h_display.columns = ['Datum', 'Hemmalag', ' ', '  ', 'Bortalag']
+            
+            st.dataframe(h2h_display.sort_values('Datum', ascending=False), hide_index=True, use_container_width=True)
         else:
             st.write("Inga tidigare möten hittades.")
 
