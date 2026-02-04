@@ -105,7 +105,7 @@ if df is not None:
     if st.session_state.view_match is not None:
         render_match_analysis(st.session_state.view_match)
     else:
-        tab1, tab2, tab3, tab4 = st.tabs(["📅 Matcher", "📊 Lagstatistik", "⚖️ Domaranalys", "🏆 Tabell"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📅 Matcher", "🛡️ Lagstatistik", "⚖️ Domaranalys", "🏆 Tabell"])
 
         # --- TAB 1: MATCHER ---
         with tab1:
@@ -153,14 +153,36 @@ if df is not None:
                     else:
                         st.button("H2H", key=f"btn_{index}", disabled=True)
 
-        # --- TAB 2: LAGSTATISTIK ---
+        # --- TAB 2: LAGSTATISTIK (UPPDATERAD) ---
         with tab2:
-            st.header("📊 Laganalys")
+            st.header("📊 Detaljerad Laganalys")
             teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
-            sel_team = st.selectbox("Välj lag:", teams)
+            sel_team = st.selectbox("Välj lag för statistik:", teams)
+            
             if sel_team:
-                t_df = df[(df['response.teams.home.name'] == sel_team) | (df['response.teams.away.name'] == sel_team)]
-                st.metric("Matcher totalt i systemet", len(t_df))
+                # Filtrera matcher där laget deltagit och matchen är spelad (FT)
+                t_df = df[((df['response.teams.home.name'] == sel_team) | (df['response.teams.away.name'] == sel_team)) & (df['response.fixture.status.short'] == 'FT')]
+                
+                if t_df.empty:
+                    st.warning("Inga spelade matcher hittades för detta lag i databasen ännu.")
+                else:
+                    st.subheader(f"Snittstatistik för {sel_team} (Baserat på {len(t_df)} matcher)")
+                    
+                    # Beräkna snittvärden beroende på om laget var hemma eller borta
+                    t_df['goals_for'] = t_df.apply(lambda r: r['response.goals.home'] if r['response.teams.home.name'] == sel_team else r['response.goals.away'], axis=1)
+                    t_df['xg_for'] = t_df.apply(lambda r: r['xG Hemma'] if r['response.teams.home.name'] == sel_team else r['xG Borta'], axis=1)
+                    t_df['corners_for'] = t_df.apply(lambda r: r['Hörnor Hemma'] if r['response.teams.home.name'] == sel_team else r['Hörnor Borta'], axis=1)
+                    t_df['yellow_for'] = t_df.apply(lambda r: r['Gula kort Hemma'] if r['response.teams.home.name'] == sel_team else r['Gula Kort Borta'], axis=1)
+                    
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Snitt Mål", round(t_df['goals_for'].mean(), 2))
+                    m2.metric("Snitt xG", round(t_df['xg_for'].mean(), 2))
+                    m3.metric("Snitt Hörnor", round(t_df['corners_for'].mean(), 2))
+                    m4.metric("Snitt Gula kort", round(t_df['yellow_for'].mean(), 2))
+                    
+                    st.divider()
+                    st.write("Senaste resultaten för laget:")
+                    st.dataframe(t_df[['datetime', 'response.teams.home.name', 'response.teams.away.name', 'response.goals.home', 'response.goals.away']].tail(10), hide_index=True)
 
         # --- TAB 3: DOMARANALYS ---
         with tab3:
@@ -181,7 +203,7 @@ if df is not None:
             if standings_df is not None and not standings_df.empty:
                 st.dataframe(standings_df, hide_index=True, use_container_width=True)
             else:
-                st.info("Tabellen uppdateras så fort API-kvoten nollställs.")
+                st.info("Tabellen uppdateras så fort API-kvoten nollställs inatt.")
 
 else:
     st.error("Kunde inte ladda 'Raw Data'. Kontrollera länk och publicering.")
