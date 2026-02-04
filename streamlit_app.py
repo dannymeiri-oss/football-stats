@@ -5,8 +5,16 @@ import time
 from datetime import datetime
 import numpy as np
 
-# --- 1. KONFIGURATION (LÅST) ---
+# --- 1. KONFIGURATION ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
+
+# CSS för att snygga till tabeller och centrering
+st.markdown("""
+    <style>
+    .stDataFrame { margin-left: auto; margin-right: auto; }
+    [data-testid="stMetricValue"] { font-size: 1.8rem !important; }
+    </style>
+    """, unsafe_allow_html=True)
 
 API_KEY = "6343cd4636523af501b585a1b595ad26" 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
@@ -79,7 +87,7 @@ def stat_comparison_row(label, val1, val2, is_pct=False):
 
 # --- 4. VISUALISERING ---
 if df is not None:
-    # --- VY: STATISTIK (RESULTAT) ---
+    # --- RESULTAT-VY ---
     if st.session_state.view_match is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_match = None
@@ -92,76 +100,73 @@ if df is not None:
         stat_comparison_row("Hörnor", int(r['Hörnor Hemma']), int(r['Hörnor Borta']))
         stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
 
-    # --- VY: ANALYS (H2H) ---
+    # --- ANALYS-VY (H2H) ---
     elif st.session_state.view_h2h is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_h2h = None
             st.rerun()
         m = st.session_state.view_h2h
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
-        st.markdown(f"<h1 style='text-align: center;'>H2H Analys: {h_team} vs {a_team}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='text-align: center;'>{h_team} vs {a_team}</h2>", unsafe_allow_html=True)
         
-        # 1. SNITT & METRICS
+        # Snitt-data
         h_stats = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
         a_stats = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
         
-        if not h_stats.empty or not a_stats.empty:
-            tc1, tc2, tc3, tc4 = st.columns(4)
-            tc1.metric("Mål snitt", round(h_stats['response.goals.home'].mean() + a_stats['response.goals.away'].mean(), 2))
-            tc2.metric("xG snitt", round(h_stats['xG Hemma'].mean() + a_stats['xG Borta'].mean(), 2))
-            tc3.metric("Hörnor snitt", round(h_stats['Hörnor Hemma'].mean() + a_stats['Hörnor Borta'].mean(), 1))
-            tc4.metric("Gula snitt", round(h_stats['Gula kort Hemma'].mean() + a_stats['Gula Kort Borta'].mean(), 1))
-            
-            st.divider()
-            
-            # 2. ODDS
-            st.markdown("<h4 style='text-align: center;'>💸 Live Odds (Unibet via API-Football)</h4>", unsafe_allow_html=True)
-            odds = fetch_api_football_odds(m.get('response.fixture.id'))
-            if odds:
-                o1, o2, o3 = st.columns(3)
-                with o1:
-                    if '1X2' in odds:
-                        st.write("**1X2 Odds**")
-                        for o in odds['1X2']: st.write(f"{o['value']}: **{o['odd']}**")
-                with o2:
-                    if 'Corners' in odds:
-                        st.write("**Hörnor (Ö/U)**")
-                        for o in odds['Corners']: 
-                            if "9.5" in o['value']: st.write(f"{o['value']}: **{o['odd']}**")
-                    if 'BTTS' in odds:
-                        st.write("**BTTS**")
-                        for o in odds['BTTS']: st.write(f"{o['value']}: **{o['odd']}**")
-                with o3:
-                    if 'Cards' in odds:
-                        st.write("**Kort (Ö/U)**")
-                        for o in odds['Cards']:
-                            if "3.5" in o['value']: st.write(f"{o['value']}: **{o['odd']}**")
-            
-            st.divider()
+        tc1, tc2, tc3, tc4 = st.columns(4)
+        tc1.metric("Mål snitt", round(h_stats['response.goals.home'].mean() + a_stats['response.goals.away'].mean(), 2))
+        tc2.metric("xG snitt", round(h_stats['xG Hemma'].mean() + a_stats['xG Borta'].mean(), 2))
+        tc3.metric("Hörnor snitt", round(h_stats['Hörnor Hemma'].mean() + a_stats['Hörnor Borta'].mean(), 1))
+        tc4.metric("Gula snitt", round(h_stats['Gula kort Hemma'].mean() + a_stats['Gula Kort Borta'].mean(), 1))
+        
+        st.divider()
 
-            # 3. HISTORISKA MÖTEN (ÅTERSTÄLLD LOGIK OCH HEADERS)
-            st.subheader("📜 Senaste inbördes möten")
-            h2h_matches = df[
-                ((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
-                ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))
-            ].copy()
+        # ODDS SEKTION
+        st.markdown("<h4 style='text-align: center;'>💸 Live Odds (API-Football)</h4>", unsafe_allow_html=True)
+        odds = fetch_api_football_odds(m.get('response.fixture.id'))
+        if odds:
+            o1, o2, o3 = st.columns(3)
+            with o1:
+                if '1X2' in odds:
+                    st.write("**1X2**")
+                    for o in odds['1X2']: st.write(f"{o['value']}: **{o['odd']}**")
+            with o2:
+                if 'Corners' in odds:
+                    st.write("**Hörnor 9.5**")
+                    for o in odds['Corners']: 
+                        if "9.5" in o['value']: st.write(f"{o['value']}: **{o['odd']}**")
+            with o3:
+                if 'Cards' in odds:
+                    st.write("**Kort 3.5**")
+                    for o in odds['Cards']:
+                        if "3.5" in o['value']: st.write(f"{o['value']}: **{o['odd']}**")
+        
+        st.divider()
+
+        # HISTORISKA MÖTEN - CENTRERAD OCH SNYGG
+        st.markdown("<h3 style='text-align: center;'>Inbördes Möten</h3>", unsafe_allow_html=True)
+        h2h_matches = df[
+            ((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
+            ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))
+        ].copy()
+        
+        if not h2h_matches.empty:
+            h2h_matches = h2h_matches[h2h_matches['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
+            h2h_display = h2h_matches[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']].copy()
+            h2h_display['datetime'] = h2h_display['datetime'].dt.strftime('%d %b %Y')
+            h2h_display.columns = ['Datum', 'Hemmalag', ' ', '  ', 'Bortalag']
             
-            if not h2h_matches.empty:
-                h2h_matches = h2h_matches[h2h_matches['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
-                h2h_display = h2h_matches[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']].copy()
-                h2h_display['datetime'] = h2h_display['datetime'].dt.strftime('%d %b %Y %H:%M')
-                h2h_display.columns = ['Datum', 'Hemmalag', ' ', '  ', 'Bortalag']
+            # Centrerad container för tabellen
+            _, center_col, _ = st.columns([1, 6, 1])
+            with center_col:
                 st.dataframe(h2h_display, hide_index=True, use_container_width=True)
-            else:
-                st.info("Inga tidigare möten hittades i databasen.")
+        else:
+            st.info("Inga tidigare möten hittades.")
 
-            st.divider()
-            
-            # 4. JÄMFÖRELSE-RADER
-            stat_comparison_row("Mål/Match", round(h_stats['response.goals.home'].mean(), 2), round(a_stats['response.goals.away'].mean(), 2))
-            stat_comparison_row("xG/Match", round(h_stats['xG Hemma'].mean(), 2), round(a_stats['xG Borta'].mean(), 2))
-            stat_comparison_row("Hörnor snitt", round(h_stats['Hörnor Hemma'].mean(), 1), round(a_stats['Hörnor Borta'].mean(), 1))
-            stat_comparison_row("Gula Kort snitt", round(h_stats['Gula kort Hemma'].mean(), 1), round(a_stats['Gula Kort Borta'].mean(), 1))
+        st.divider()
+        stat_comparison_row("Mål/Match", round(h_stats['response.goals.home'].mean(), 2), round(a_stats['response.goals.away'].mean(), 2))
+        stat_comparison_row("xG/Match", round(h_stats['xG Hemma'].mean(), 2), round(a_stats['xG Borta'].mean(), 2))
+        stat_comparison_row("Hörnor snitt", round(h_stats['Hörnor Hemma'].mean(), 1), round(a_stats['Hörnor Borta'].mean(), 1))
 
     # --- HUVUDMENY ---
     else:
@@ -186,7 +191,7 @@ if df is not None:
                 with c_i:
                     st.markdown(f'''
                         <div style="background:white; padding:10px; border-radius:8px; border:1px solid #eee; margin-bottom:5px; display:flex; align-items:center;">
-                            <div style="width:70px; font-size:0.8em; color:gray;">{r["datetime"].strftime("%d %b") if pd.notnull(r["datetime"]) else ""}</div>
+                            <div style="width:80px; font-size:0.8em; color:gray;">{r["datetime"].strftime("%d %b")}</div>
                             <div style="flex:1; text-align:right; font-weight:bold;">{h_name} <img src="{h_logo}" width="22"></div>
                             <div style="background:#222; color:white; padding:2px 12px; margin:0 15px; border-radius:4px; font-weight:bold; min-width:65px; text-align:center;">{score_text}</div>
                             <div style="flex:1; text-align:left; font-weight:bold;"><img src="{a_logo}" width="22"> {a_name}</div>
@@ -203,7 +208,7 @@ if df is not None:
 
         with tab2:
             if standings_df is not None: st.dataframe(standings_df, use_container_width=True)
-
+        
         with tab3:
             all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
             sel_team = st.selectbox("Välj lag:", all_teams)
