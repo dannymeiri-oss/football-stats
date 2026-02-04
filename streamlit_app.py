@@ -17,17 +17,19 @@ STANDINGS_URL = f"{BASE_URL}&gid={GID_STANDINGS}"
 def load_data(url):
     try:
         data = pd.read_csv(url)
-        data.columns = [col.strip() for col in data.columns] # Rensar dolda mellanslag
+        data.columns = [col.strip() for col in data.columns]
         return data
     except:
         return None
 
 def clean_stats(data):
     if data is None: return None
+    # Skapa säsong/år-kolumn om den saknas eller utvinns från datum
     if 'response.fixture.date' in data.columns:
         data['datetime'] = pd.to_datetime(data['response.fixture.date'], errors='coerce')
+        data['Säsong'] = data['datetime'].dt.year.fillna(0).astype(int)
     
-    # LISTA PÅ ALLA 32+ PUNKTER
+    # SÄKERSTÄLL ALLA 32+ DATAPUNKTER
     cols_to_ensure = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
         'Gula kort Hemma', 'Gula Kort Borta', 'Röda Kort Hemma', 'Röda Kort Borta',
@@ -37,7 +39,7 @@ def clean_stats(data):
         'Skott i Box Hemma', 'Skott i Box Borta', 'Skott utanför Box Hemma', 'Skott utanför Box Borta',
         'Passningar Hemma', 'Passningar Borta', 'Passningssäkerhet Hemma', 'Passningssäkerhet Borta',
         'Offside Hemma', 'Offside Borta', 'Räddningar Hemma', 'Räddningar Borta',
-        'Straffar Hemma', 'Straffar Borta', # Fixar ditt KeyError
+        'Straffar Hemma', 'Straffar Borta',
         'response.goals.home', 'response.goals.away', 'response.fixture.status.short',
         'response.teams.home.logo', 'response.teams.away.logo', 'response.fixture.referee'
     ]
@@ -61,12 +63,10 @@ if 'view_match' not in st.session_state:
 # --- HUVUDLAYOUT ---
 if df is not None:
     if st.session_state.view_match is not None:
-        # Analysvy
         if st.button("← Tillbaka"): st.session_state.view_match = None; st.rerun()
         r = st.session_state.view_match
         st.title(f"{r['response.teams.home.name']} {int(r['response.goals.home'])} - {int(r['response.goals.away'])} {r['response.teams.away.name']}")
-        st.divider()
-        st.write("Statistikdetaljer för matchen...")
+        st.write("Matchanalys...")
     else:
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Matcher", "🛡️ Lagstatistik", "⚖️ Domaranalys", "🏆 Tabell"])
 
@@ -74,7 +74,7 @@ if df is not None:
             st.header("Matchcenter")
             m_col, s_col = st.columns(2)
             mode = m_col.radio("Visa:", ["Nästa 50 matcher", "Senaste resultaten"], horizontal=True)
-            search = s_col.text_input("Sök lag:", "")
+            search = s_col.text_input("Sök lag:", "", key="search_main")
             d_df = df[df['response.fixture.status.short'] == ('NS' if mode == "Nästa 50 matcher" else 'FT')]
             if search: d_df = d_df[(d_df['response.teams.home.name'].str.contains(search, case=False)) | (d_df['response.teams.away.name'].str.contains(search, case=False))]
             for idx, r in d_df.sort_values('datetime', ascending=(mode=="Nästa 50 matcher")).head(50).iterrows():
@@ -88,14 +88,23 @@ if df is not None:
 
         with tab2:
             st.header("🛡️ Laganalys")
+            
+            # FILTRERING: Lag och Säsong
+            f_col1, f_col2 = st.columns(2)
             all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
-            sel_team = st.selectbox("Välj lag:", all_teams)
+            sel_team = f_col1.selectbox("Välj lag:", all_teams)
+            
+            all_years = sorted(df['Säsong'].unique(), reverse=True)
+            sel_year = f_col2.selectbox("Välj säsong (år):", all_years)
+            
             if sel_team:
-                h_df = df[(df['response.teams.home.name'] == sel_team) & (df['response.fixture.status.short'] == 'FT')]
-                a_df = df[(df['response.teams.away.name'] == sel_team) & (df['response.fixture.status.short'] == 'FT')]
+                # Filtrera på både lag, säsong och spelade matcher
+                team_year_df = df[df['Säsong'] == sel_year]
+                h_df = team_year_df[(team_year_df['response.teams.home.name'] == sel_team) & (team_year_df['response.fixture.status.short'] == 'FT')]
+                a_df = team_year_df[(team_year_df['response.teams.away.name'] == sel_team) & (team_year_df['response.fixture.status.short'] == 'FT')]
                 
                 # --- 1. TOTALT (ÖVERST) ---
-                st.subheader(f"📊 Totalt snitt: {sel_team}")
+                st.subheader(f"📊 Totalt snitt {sel_year}: {sel_team}")
                 t_m = len(h_df) + len(a_df)
                 if t_m > 0:
                     tc1, tc2, tc3, tc4, tc5 = st.columns(5)
@@ -111,7 +120,6 @@ if df is not None:
                 with col_h:
                     st.subheader("🏠 HEMMA SNITT")
                     if not h_df.empty:
-                        # Här visas ALLA 32 punkter
                         st.metric("Mål / xG", f"{round(h_df['response.goals.home'].mean(),2)} / {round(h_df['xG Hemma'].mean(),2)}")
                         st.metric("Innehav", f"{int(h_df['Bollinnehav Hemma'].mean())}%")
                         st.metric("Skott på mål / Totalt", f"{round(h_df['Skott på mål Hemma'].mean(),1)} / {round(h_df['Total Skott Hemma'].mean(),1)}")
@@ -121,7 +129,7 @@ if df is not None:
                         st.metric("Fouls / Räddningar", f"{round(h_df['Fouls Hemma'].mean(),1)} / {round(h_df['Räddningar Hemma'].mean(),1)}")
                         st.metric("Gula / Röda", f"{round(h_df['Gula kort Hemma'].mean(),1)} / {round(h_df['Röda Kort Hemma'].mean(),2)}")
                         st.metric("Passningar / Säkerhet", f"{int(h_df['Passningar Hemma'].mean())} / {int(h_df['Passningssäkerhet Hemma'].mean())}%")
-                    else: st.write("Ingen hemma-data")
+                    else: st.write("Ingen hemma-data för vald säsong.")
 
                 with col_a:
                     st.subheader("✈️ BORTA SNITT")
@@ -135,7 +143,7 @@ if df is not None:
                         st.metric("Fouls / Räddningar", f"{round(a_df['Fouls Borta'].mean(),1)} / {round(a_df['Räddningar Borta'].mean(),1)}")
                         st.metric("Gula / Röda", f"{round(a_df['Gula Kort Borta'].mean(),1)} / {round(a_df['Röda Kort Borta'].mean(),2)}")
                         st.metric("Passningar / Säkerhet", f"{int(a_df['Passningar Borta'].mean())} / {int(a_df['Passningssäkerhet Borta'].mean())}%")
-                    else: st.write("Ingen borta-data")
+                    else: st.write("Ingen borta-data för vald säsong.")
 
         with tab3:
             st.header("⚖️ Domaranalys")
