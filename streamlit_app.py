@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
+import time
 from datetime import datetime
 
 # --- 1. KONFIGURATION & LÄNKAR ---
@@ -32,42 +33,45 @@ def get_sport_key_from_league_name(league_name):
     }
     return mapping.get(ln, "soccer_epl")
 
-# --- 3. ODDS-MOTOR (MULTIPLE ENDPOINT STRATEGY) ---
-@st.cache_data(ttl=600)
+# --- 3. ODDS-MOTOR (SKOTTSÄKER MOT 422) ---
+@st.cache_data(ttl=300) # Kortare cache för att kunna uppdatera snabbare
 def fetch_odds_robust(sport_key):
     if not ODDS_API_KEY: return None, "Ingen API-nyckel"
     
-    # Vi försöker hämta alla marknader i ett svep först
+    # Försök 1: Fullständig hämtning
     markets = "h2h,totals,btts,double_chance,draw_no_bet"
     url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets={markets}&bookmakers=unibet"
     
     try:
         res = requests.get(url)
         if res.status_code == 200:
-            return res.json(), "OK - Alla marknader"
-        else:
-            # Om det skiter sig (422), hämta bara 1X2 som säkerhet
-            fallback_url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h&bookmakers=unibet"
-            res_fb = requests.get(fallback_url)
+            return res.json(), "SUCCESS: Alla marknader laddade"
+        elif res.status_code == 422:
+            # Försök 2: Fallback med minimalt anrop om 422 (Overload) uppstår
+            time.sleep(0.5) # Kort paus för att lugna API:et
+            fb_url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h&bookmakers=unibet"
+            res_fb = requests.get(fb_url)
             if res_fb.status_code == 200:
-                return res_fb.json(), f"FALLBACK - Endast 1X2 (Felkod {res.status_code})"
-        return None, f"API Error: {res.status_code}"
+                return res_fb.json(), "FALLBACK: Endast 1X2 (API-begränsning)"
+        return None, f"FEL: API svarade med {res.status_code}"
     except Exception as e:
-        return None, f"Error: {str(e)}"
+        return None, f"EXCEPTION: {str(e)}"
 
 def get_match_odds_from_cache(home_sheet, away_sheet, all_odds):
     if not isinstance(all_odds, list): return None
     
     def clean(name):
         name = str(name).lower()
-        # Utökad rensning för bättre matchning (ref bild 5 i din prompt)
-        for r in ["fc", "afc", "town", "city", "united", "hotspur", "wanderers", "wolves", "spurs", "forest"]:
+        # Tar bort allt som kan störa matchningen mellan ark och API
+        noise = ["fc", "afc", "town", "city", "united", "hotspur", "wanderers", "wolves", "spurs", "forest", "leeds"]
+        for r in noise:
             name = name.replace(r, "")
         return "".join(filter(str.isalnum, name)).strip()
     
     h_s, a_s = clean(home_sheet), clean(away_sheet)
     for match in all_odds:
         h_api, a_api = clean(match['home_team']), clean(match['away_team'])
+        # Dubbelkoll: Matchar antingen Home-Home eller att namnen innehåller varandra
         if (h_s in h_api or h_api in h_s) and (a_s in a_api or a_api in a_s):
             m_found = {}
             if 'bookmakers' in match and len(match['bookmakers']) > 0:
@@ -146,6 +150,7 @@ if df is not None:
             
             st.divider()
             
+            # ODDS-SEKTION
             st.markdown("<h4 style='text-align: center;'>💸 Marknadsodds (Unibet)</h4>", unsafe_allow_html=True)
             sk = get_sport_key_from_league_name(m.get('response.league.name', ''))
             api_res, status_msg = fetch_odds_robust(sk)
@@ -173,7 +178,7 @@ if df is not None:
                         for o in odds['totals']:
                             if o.get('point') == 2.5: st.write(f"{o['name']}: **{o['price']}**")
             else:
-                st.info("Inga odds matchades för denna match just nu.")
+                st.info(f"Kunde inte hämta odds just nu. (Status: {status_msg})")
 
             st.divider()
             st.markdown("<h4 style='text-align: center;'>📊 Detaljerad Lagjämförelse</h4>", unsafe_allow_html=True)
@@ -184,8 +189,8 @@ if df is not None:
 
             with st.expander("🛠️ Debut Console: API-status"):
                 st.write(f"Liga: {sk} | Status: {status_msg}")
-                st.write(f"Matchning sökt: {h_team} vs {a_team}")
-                st.write(f"Antal matcher i API: {len(api_res) if isinstance(api_res, list) else 0}")
+                st.write(f"Matchning sökt för: {h_team} vs {a_team}")
+                if api_res: st.write(f"Antal matcher i API-svar: {len(api_res)}")
 
     # --- HUVUDMENY ---
     else:
