@@ -2,24 +2,26 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
-# --- 1. KONFIGURATION (PERFECT LAYOUT - FULL RESTORE) ---
+# --- 1. KONFIGURATION (PERFECT LAYOUT - ABSOLUT ÅTERSTÄLLNING) ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
 st.markdown("""
     <style>
     .stDataFrame { margin-left: auto; margin-right: auto; }
-    [data-testid="stMetricValue"] { font-size: 1.8rem !important; }
+    [data-testid="stMetricValue"] { font-size: 1.8rem !important; text-align: center; }
     .main-title { text-align: center; color: #1E1E1E; margin-bottom: 0px; font-weight: bold; }
     .sub-title { text-align: center; color: #666; margin-bottom: 25px; }
     .bell-style { font-size: 1.3rem; display: flex; align-items: center; justify-content: center; height: 100%; }
     .match-row { background: white; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 5px; display: flex; align-items: center; }
-    .odds-box { background: #f9f9f9; padding: 15px; border-radius: 10px; border: 1px dashed #ccc; text-align: center; margin-bottom: 20px; margin-top: 10px; }
-    .centered-header { text-align: center; margin-bottom: 20px; }
+    .odds-box { background: #f9f9f9; padding: 15px; border-radius: 10px; border: 1px dashed #ccc; text-align: center; margin: 20px auto; max-width: 600px; }
+    .centered-header { text-align: center; margin-bottom: 30px; display: flex; justify-content: center; align-items: center; gap: 20px; }
+    .stat-label { text-align: center; color: #888; font-weight: bold; font-size: 0.9em; text-transform: uppercase; }
+    .stat-value { text-align: center; font-size: 1.2em; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-title'>Perfect Layout - All Data Restored</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-title'>Perfect Layout - Fixed Formatting & Logos</p>", unsafe_allow_html=True)
 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
@@ -38,7 +40,6 @@ def clean_stats(data):
     if data is None: return None
     if 'response.fixture.date' in data.columns:
         data['datetime'] = pd.to_datetime(data['response.fixture.date'], errors='coerce')
-        data['Säsong'] = data['datetime'].dt.year.fillna(0).astype(int)
     
     numeric_cols = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
@@ -65,16 +66,20 @@ if 'selected_match' not in st.session_state: st.session_state.selected_match = N
 def stat_comparison_row(label, val1, val2, is_pct=False):
     c1, c2, c3 = st.columns([2, 1, 2])
     suffix = "%" if is_pct else ""
-    c1.markdown(f"<div style='text-align:right; font-size:1.1em;'>{val1}{suffix}</div>", unsafe_allow_html=True)
-    c2.markdown(f"<div style='text-align:center; color:#888; font-weight:bold; font-size:0.9em;'>{label}</div>", unsafe_allow_html=True)
-    c3.markdown(f"<div style='text-align:left; font-size:1.1em;'>{val2}{suffix}</div>", unsafe_allow_html=True)
+    c1.markdown(f"<div class='stat-value' style='text-align:right;'>{val1}{suffix}</div>", unsafe_allow_html=True)
+    c2.markdown(f"<div class='stat-label'>{label}</div>", unsafe_allow_html=True)
+    c3.markdown(f"<div class='stat-value' style='text-align:left;'>{val2}{suffix}</div>", unsafe_allow_html=True)
 
 # --- 3. LAYOUT ---
 if df is not None:
     if st.session_state.view_mode == "match_detail":
         if st.button("← Tillbaka"): st.session_state.view_mode = "main"; st.rerun()
         r = st.session_state.selected_match
-        st.markdown(f"<h2 class='centered-header'>{r['response.teams.home.name']} {int(r['response.goals.home'])} - {int(r['response.goals.away'])} {r['response.teams.away.name']}</h2>", unsafe_allow_html=True)
+        st.markdown(f"""<div class='centered-header'>
+            <img src='{r['response.teams.home.logo']}' width='50'> 
+            <h2>{r['response.teams.home.name']} {int(r['response.goals.home'])} - {int(r['response.goals.away'])} {r['response.teams.away.name']}</h2>
+            <img src='{r['response.teams.away.logo']}' width='50'>
+        </div>""", unsafe_allow_html=True)
         st.divider()
         stat_comparison_row("xG", round(r['xG Hemma'], 2), round(r['xG Borta'], 2))
         stat_comparison_row("Bollinnehav", int(r['Bollinnehav Hemma']), int(r['Bollinnehav Borta']), True)
@@ -86,23 +91,29 @@ if df is not None:
         if st.button("← Tillbaka"): st.session_state.view_mode = "main"; st.rerun()
         m = st.session_state.selected_match
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
-        st.markdown(f"<h2 class='centered-header'>{h_team} vs {a_team}</h2>", unsafe_allow_html=True)
+        
+        st.markdown(f"""<div class='centered-header'>
+            <img src='{m['response.teams.home.logo']}' width='60'> 
+            <h1 style='margin:0 20px;'>{h_team} vs {a_team}</h1>
+            <img src='{m['response.teams.away.logo']}' width='60'>
+        </div>""", unsafe_allow_html=True)
         
         st.markdown(f"""<div class="odds-box">
             <strong>Analys Odds (1X2):</strong> 2.10 | 3.40 | 3.10 <br>
-            <small>Baserat på historisk data för {h_team} och {a_team}</small>
+            <small>Baserat på historisk data för båda lagen</small>
         </div>""", unsafe_allow_html=True)
         
         h_hist = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
         a_hist = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
         
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Mål snitt", round(h_hist['response.goals.home'].mean() + a_hist['response.goals.away'].mean(), 2) if not h_hist.empty else 0)
-        c2.metric("xG snitt", round(h_hist['xG Hemma'].mean() + a_hist['xG Borta'].mean(), 2) if not h_hist.empty else 0)
-        c3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else 0)
-        c4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else 0)
+        # Metric-rad (Centrerad)
+        m1, m2, m3, m4 = st.columns(4)
+        with m1: st.metric("Mål snitt", round(h_hist['response.goals.home'].mean() + a_hist['response.goals.away'].mean(), 2) if not h_hist.empty else 0)
+        with m2: st.metric("xG snitt", round(h_hist['xG Hemma'].mean() + a_hist['xG Borta'].mean(), 2) if not h_hist.empty else 0)
+        with m3: st.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else 0)
+        with m4: st.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else 0)
         
-        st.write("")
+        st.write("---")
         stat_comparison_row("Mål/Match", round(h_hist['response.goals.home'].mean(), 2) if not h_hist.empty else 0, round(a_hist['response.goals.away'].mean(), 2) if not a_hist.empty else 0)
         stat_comparison_row("xG/Match", round(h_hist['xG Hemma'].mean(), 2) if not h_hist.empty else 0, round(a_hist['xG Borta'].mean(), 2) if not a_hist.empty else 0)
         stat_comparison_row("Bollinnehav", f"{int(h_hist['Bollinnehav Hemma'].mean())}%" if not h_hist.empty else "0%", f"{int(a_hist['Bollinnehav Borta'].mean())}%" if not a_hist.empty else "0%")
@@ -125,10 +136,8 @@ if df is not None:
                 show_bell = False
                 if mode == "Nästa matcher":
                     hist = df[df['response.fixture.status.short'] == 'FT']
-                    h_total = hist[(hist['response.teams.home.name'] == r['response.teams.home.name']) | (hist['response.teams.away.name'] == r['response.teams.home.name'])]
-                    h_avg = h_total.apply(lambda x: x['Gula kort Hemma'] if x['response.teams.home.name'] == r['response.teams.home.name'] else x['Gula Kort Borta'], axis=1).mean()
-                    a_total = hist[(hist['response.teams.home.name'] == r['response.teams.away.name']) | (hist['response.teams.away.name'] == r['response.teams.away.name'])]
-                    a_avg = a_total.apply(lambda x: x['Gula kort Hemma'] if x['response.teams.home.name'] == r['response.teams.away.name'] else x['Gula Kort Borta'], axis=1).mean()
+                    h_avg = hist[(hist['response.teams.home.name'] == r['response.teams.home.name']) | (hist['response.teams.away.name'] == r['response.teams.home.name'])].apply(lambda x: x['Gula kort Hemma'] if x['response.teams.home.name'] == r['response.teams.home.name'] else x['Gula Kort Borta'], axis=1).mean()
+                    a_avg = hist[(hist['response.teams.home.name'] == r['response.teams.away.name']) | (hist['response.teams.away.name'] == r['response.teams.away.name'])].apply(lambda x: x['Gula kort Hemma'] if x['response.teams.home.name'] == r['response.teams.away.name'] else x['Gula Kort Borta'], axis=1).mean()
                     if (np.nan_to_num(h_avg) + np.nan_to_num(a_avg)) > 3.4: show_bell = True
 
                 col_info, col_btn = st.columns([4.5, 1.5])
@@ -169,14 +178,30 @@ if df is not None:
                     col_h, col_a = st.columns(2)
                     with col_h:
                         st.subheader("🏠 HEMMA")
-                        for lbl, col in [("Mål", 'response.goals.home'), ("xG", 'xG Hemma'), ("Bollinnehav", 'Bollinnehav Hemma'), ("Skott på mål", 'Skott på mål Hemma'), ("Hörnor", 'Hörnor Hemma'), ("Gula Kort", 'Gula kort Hemma'), ("Passnings%", 'Passningssäkerhet Hemma')]:
-                            val = h_df[col].mean() if not h_df.empty else 0
-                            st.metric(lbl, f"{int(val)}%" if "%" in lbl else round(val, 1))
+                        stats = [
+                            ("Mål", h_df['response.goals.home'].mean()),
+                            ("xG", h_df['xG Hemma'].mean()),
+                            ("Bollinnehav", h_df['Bollinnehav Hemma'].mean()),
+                            ("Skott på mål", h_df['Skott på mål Hemma'].mean()),
+                            ("Hörnor", h_df['Hörnor Hemma'].mean()),
+                            ("Gula Kort", h_df['Gula kort Hemma'].mean()),
+                            ("Passnings%", h_df['Passningssäkerhet Hemma'].mean())
+                        ]
+                        for lbl, val in stats:
+                            st.metric(lbl, f"{int(val)}%" if "Pass" in lbl or "Boll" in lbl else round(val, 1))
                     with col_a:
                         st.subheader("✈️ BORTA")
-                        for lbl, col in [("Mål", 'response.goals.away'), ("xG", 'xG Borta'), ("Bollinnehav", 'Bollinnehav Borta'), ("Skott på mål", 'Skott på mål Borta'), ("Hörnor", 'Hörnor Borta'), ("Gula Kort", 'Gula Kort Borta'), ("Passnings%", 'Passningssäkerhet Borta')]:
-                            val = a_df[col].mean() if not a_df.empty else 0
-                            st.metric(lbl, f"{int(val)}%" if "%" in lbl else round(val, 1))
+                        stats_a = [
+                            ("Mål", a_df['response.goals.away'].mean()),
+                            ("xG", a_df['xG Borta'].mean()),
+                            ("Bollinnehav", a_df['Bollinnehav Borta'].mean()),
+                            ("Skott på mål", a_df['Skott på mål Borta'].mean()),
+                            ("Hörnor", a_df['Hörnor Borta'].mean()),
+                            ("Gula Kort", a_df['Gula Kort Borta'].mean()),
+                            ("Passnings%", a_df['Passningssäkerhet Borta'].mean())
+                        ]
+                        for lbl, val in stats_a:
+                            st.metric(lbl, f"{int(val)}%" if "Pass" in lbl or "Boll" in lbl else round(val, 1))
 
         with tab3:
             st.header("⚖️ Domaranalys")
