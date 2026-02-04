@@ -1,26 +1,24 @@
 import streamlit as st
 import pandas as pd
 import requests
-import time
 from datetime import datetime
 import numpy as np
 
-# --- 1. KONFIGURATION ---
+# --- 1. KONFIGURATION (GULD-VERSION) ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
-# CSS för layout och klocka
 st.markdown("""
     <style>
     .stDataFrame { margin-left: auto; margin-right: auto; }
     [data-testid="stMetricValue"] { font-size: 1.8rem !important; }
-    .main-title { text-align: center; color: #1E1E1E; margin-bottom: 0px; }
-    .sub-title { text-align: center; color: #666; margin-bottom: 20px; }
+    .main-title { text-align: center; color: #1E1E1E; margin-bottom: 0px; font-weight: bold; }
+    .sub-title { text-align: center; color: #666; margin-bottom: 25px; }
+    .bell-style { font-size: 1.5rem; display: flex; align-items: center; height: 100%; padding-top: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
-# Återställer rubrikerna längst upp
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-title'>Avancerad fotbollsanalys och live-odds</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-title'>Guld Version - Avancerad Analys & Live Stats</p>", unsafe_allow_html=True)
 
 API_KEY = "6343cd4636523af501b585a1b595ad26" 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
@@ -31,7 +29,7 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv
 RAW_DATA_URL = f"{BASE_URL}&gid={GID_RAW}"
 STANDINGS_URL = f"{BASE_URL}&gid={GID_STANDINGS}"
 
-# --- 2. ODDS-MOTOR ---
+# --- 2. MOTORER ---
 @st.cache_data(ttl=600)
 def fetch_api_football_odds(fixture_id):
     if not fixture_id: return None
@@ -52,7 +50,6 @@ def fetch_api_football_odds(fixture_id):
         return odds_dict
     except: return None
 
-# --- 3. DATAHANTERING ---
 @st.cache_data(ttl=60)
 def load_data(url):
     try:
@@ -88,7 +85,7 @@ def stat_comparison_row(label, val1, val2, is_pct=False):
     c2.markdown(f"<div style='text-align:center; color:#888; font-weight:bold;'>{label}</div>", unsafe_allow_html=True)
     c3.markdown(f"<div style='text-align:left; font-size:1.1em;'>{val2}{suffix}</div>", unsafe_allow_html=True)
 
-# --- 4. VISUALISERING ---
+# --- 3. VISUALISERING ---
 if df is not None:
     # --- RESULTAT-VY ---
     if st.session_state.view_match is not None:
@@ -103,7 +100,7 @@ if df is not None:
         stat_comparison_row("Hörnor", int(r['Hörnor Hemma']), int(r['Hörnor Borta']))
         stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
 
-    # --- ANALYS-VY (H2H) ---
+    # --- H2H ANALYS-VY ---
     elif st.session_state.view_h2h is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_h2h = None
@@ -115,21 +112,20 @@ if df is not None:
         h_stats = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
         a_stats = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
         
-        # Metrics & Jämförelse direkt under
+        # Stora rutor
         tc1, tc2, tc3, tc4 = st.columns(4)
         tc1.metric("Mål snitt", round(h_stats['response.goals.home'].mean() + a_stats['response.goals.away'].mean(), 2))
         tc2.metric("xG snitt", round(h_stats['xG Hemma'].mean() + a_stats['xG Borta'].mean(), 2))
         tc3.metric("Hörnor snitt", round(h_stats['Hörnor Hemma'].mean() + a_stats['Hörnor Borta'].mean(), 1))
         tc4.metric("Gula snitt", round(h_stats['Gula kort Hemma'].mean() + a_stats['Gula Kort Borta'].mean(), 1))
         
+        # Jämförelse direkt under
         st.write("") 
         stat_comparison_row("Mål/Match", round(h_stats['response.goals.home'].mean(), 2), round(a_stats['response.goals.away'].mean(), 2))
         stat_comparison_row("xG/Match", round(h_stats['xG Hemma'].mean(), 2), round(a_stats['xG Borta'].mean(), 2))
         stat_comparison_row("Hörnor snitt", round(h_stats['Hörnor Hemma'].mean(), 1), round(a_stats['Hörnor Borta'].mean(), 1))
         
         st.divider()
-
-        # ODDS
         st.markdown("<h4 style='text-align: center;'>💸 Live Odds</h4>", unsafe_allow_html=True)
         odds = fetch_api_football_odds(m.get('response.fixture.id'))
         if odds:
@@ -150,25 +146,15 @@ if df is not None:
                         if "3.5" in o['value']: st.write(f"{o['value']}: **{o['odd']}**")
         
         st.divider()
-
-        # INBÖRDES
         st.markdown("<h3 style='text-align: center;'>Inbördes Möten</h3>", unsafe_allow_html=True)
-        h2h_matches = df[
-            ((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
-            ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))
-        ].copy()
-        
+        h2h_matches = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))].copy()
         if not h2h_matches.empty:
             h2h_matches = h2h_matches[h2h_matches['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
             h2h_display = h2h_matches[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']].copy()
             h2h_display['datetime'] = h2h_display['datetime'].dt.strftime('%d %b %Y')
             h2h_display.columns = ['Datum', 'Hemmalag', ' ', '  ', 'Bortalag']
-            
             _, center_col, _ = st.columns([1, 6, 1])
-            with center_col:
-                st.dataframe(h2h_display, hide_index=True, use_container_width=True)
-        else:
-            st.info("Inga tidigare möten hittades.")
+            with center_col: st.dataframe(h2h_display, hide_index=True, use_container_width=True)
 
     # --- HUVUDMENY ---
     else:
@@ -187,42 +173,55 @@ if df is not None:
                     a_c = df[df['response.teams.away.name'] == a_name]['Gula Kort Borta'].mean()
                     if (np.nan_to_num(h_c) + np.nan_to_num(a_c)) >= 3.4: show_alert = True
 
-                c_i, c_b = st.columns([4, 2]) 
+                c_i, c_b = st.columns([4.2, 1.8]) 
                 score_text = f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}" if mode=="Resultat" else "VS"
-                
                 with c_i:
-                    st.markdown(f'''
-                        <div style="background:white; padding:10px; border-radius:8px; border:1px solid #eee; margin-bottom:5px; display:flex; align-items:center;">
+                    st.markdown(f'''<div style="background:white; padding:10px; border-radius:8px; border:1px solid #eee; margin-bottom:5px; display:flex; align-items:center;">
                             <div style="width:80px; font-size:0.8em; color:gray;">{r["datetime"].strftime("%d %b")}</div>
                             <div style="flex:1; text-align:right; font-weight:bold;">{h_name} <img src="{h_logo}" width="22"></div>
                             <div style="background:#222; color:white; padding:2px 12px; margin:0 15px; border-radius:4px; font-weight:bold; min-width:65px; text-align:center;">{score_text}</div>
                             <div style="flex:1; text-align:left; font-weight:bold;"><img src="{a_logo}" width="22"> {a_name}</div>
-                            <div style="margin-left:10px; font-size:0.7em; color:blue; width:100px;">{r.get("response.league.name", "")}</div>
-                        </div>
-                    ''', unsafe_allow_html=True)
+                            <div style="margin-left:10px; font-size:0.7em; color:blue; width:100px;">{r.get("response.league.name", "")}</div></div>''', unsafe_allow_html=True)
                 with c_b:
-                    col_btn, col_bell = st.columns([3, 1])
+                    col_btn, col_bell = st.columns([2.5, 1])
                     with col_btn:
                         if st.button("H2H", key=f"btn{idx}", use_container_width=True):
                             if mode=="Nästa matcher": st.session_state.view_h2h = r
                             else: st.session_state.view_match = r
                             st.rerun()
                     with col_bell:
-                        if show_alert and mode == "Nästa matcher":
-                            st.markdown("<div style='padding-top:5px; font-size:1.5rem;'>🔔</div>", unsafe_allow_html=True)
+                        if show_alert and mode == "Nästa matcher": st.markdown("<div class='bell-style'>🔔</div>", unsafe_allow_html=True)
 
         with tab2:
-            if standings_df is not None: st.dataframe(standings_df, use_container_width=True)
+            if standings_df is not None: 
+                st.dataframe(standings_df, use_container_width=True, hide_index=True)
+        
         with tab3:
+            st.markdown("### 🛡️ Laganalys")
             all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
-            sel_team = st.selectbox("Välj lag:", all_teams)
-            if sel_team: st.dataframe(df[(df['response.teams.home.name'] == sel_team) | (df['response.teams.away.name'] == sel_team)].head(15))
+            sel_team = st.selectbox("Välj lag:", ["Välj lag..."] + all_teams)
+            if sel_team != "Välj lag...":
+                t_df = df[(df['response.teams.home.name'] == sel_team) | (df['response.teams.away.name'] == sel_team)].copy()
+                t_df = t_df[t_df['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False).head(15)
+                
+                t_display = t_df[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name', 'response.league.name']].copy()
+                t_display['datetime'] = t_display['datetime'].dt.strftime('%d %b %Y')
+                t_display.columns = ['Datum', 'Hemmalag', ' ', '  ', 'Bortalag', 'Liga']
+                
+                st.markdown(f"**Senaste matcherna för {sel_team}**")
+                st.dataframe(t_display, use_container_width=True, hide_index=True)
+
         with tab4:
+            st.markdown("### ⚖️ Domarstatistik")
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["0", "Okänd"]])
-            sel_ref = st.selectbox("Välj domare:", refs)
-            if sel_ref:
-                r_df = df[df['ref_clean'] == sel_ref]
+            sel_ref = st.selectbox("Välj domare:", ["Välj domare..."] + refs)
+            if sel_ref != "Välj domare...":
+                r_df = df[df['ref_clean'] == sel_ref].copy()
                 st.metric("Gula/Match (Snitt)", round((r_df['Gula kort Hemma'] + r_df['Gula Kort Borta']).mean(), 2))
-                st.dataframe(r_df)
+                
+                r_display = r_df[['datetime', 'response.teams.home.name', 'response.teams.away.name', 'Gula kort Hemma', 'Gula Kort Borta', 'response.league.name']].copy()
+                r_display['datetime'] = r_display['datetime'].dt.strftime('%d %b %Y')
+                r_display.columns = ['Datum', 'Hemmalag', 'Bortalag', 'Gula H', 'Gula B', 'Liga']
+                st.dataframe(r_display, use_container_width=True, hide_index=True)
 else:
     st.error("Kunde inte ladda data.")
