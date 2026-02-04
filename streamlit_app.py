@@ -153,7 +153,7 @@ if df is not None:
                 tc3.metric("Hörnor", round(exp_corners, 1))
                 tc4.metric("Gula Kort", round(exp_cards, 1))
                 
-                # --- NY ODDS SEKTION ---
+                # --- ODDS SEKTION ---
                 st.divider()
                 st.markdown("<h3 style='text-align: center;'>💸 Marknadsodds (Unibet)</h3>", unsafe_allow_html=True)
                 all_market_odds = fetch_all_odds()
@@ -173,7 +173,7 @@ if df is not None:
                                 label = "Över" if o['name'].lower() == "over" else "Under"
                                 st.write(f"{label} 2.5: **{o['price']}**")
                 else:
-                    st.info("Inga live-odds hittades för denna match just nu.")
+                    st.info("Inga live-odds hittades. Notera: Marknader för kort finns ej i API-vyn.")
 
                 st.divider()
                 st.markdown("<h3 style='text-align: center;'>📊 Lagjämförelse (Snitt Hemma vs Borta)</h3>", unsafe_allow_html=True)
