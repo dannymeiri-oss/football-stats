@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas as pd
+import pandas as pd  # <--- Fixat här!
 
 # --- 1. KONFIGURATION ---
 st.set_page_config(page_title="Deep Stats 2026", layout="wide")
@@ -45,7 +45,9 @@ if df is not None:
         st.dataframe(df[['response.fixture.date', 'response.teams.home.name', 'response.teams.away.name', 'response.fixture.status.short', 'response.goals.home', 'response.goals.away']].sort_values('response.fixture.date'), use_container_width=True)
 
     with tab2:
-        HOME_COL, AWAY_COL, SEASON_COL = 'response.teams.home.name', 'response.teams.away.name', 'response.league.season'
+        HOME_COL = 'response.teams.home.name'
+        AWAY_COL = 'response.teams.away.name'
+        SEASON_COL = 'response.league.season'
         
         f1, f2, f3 = st.columns(3)
         with f1:
@@ -66,53 +68,72 @@ if df is not None:
                 stats_df = stats_df.head(20)
 
             def get_full_stats(target_df, team_name):
-                if target_df.empty: return None
                 def map_row(row):
                     is_h = row[HOME_COL] == team_name
                     s = " Hemma" if is_h else " Borta"
                     g_key = "Gula kort Hemma" if is_h else "Gula Kort Borta"
                     return pd.Series({
                         'Mål': row['response.goals.home'] if is_h else row['response.goals.away'],
-                        'xG': row.get(f'xG{s}', 0), 'Hörnor': row.get(f'Hörnor{s}', 0),
-                        'Bollinnehav': row.get(f'Bollinnehav{s}', 0), 'Skott på mål': row.get(f'Skott på mål{s}', 0),
-                        'Totala Skott': row.get(f'Total Skott{s}', 0), 'Skott Utanför': row.get(f'Skott Utanför{s}', 0),
-                        'Blockerade Skott': row.get(f'Blockerade Skott{s}', 0), 'Skott i Box': row.get(f'Skott i Box{s}', 0),
-                        'Skott utanför Box': row.get(f'Skott utanför Box{s}', 0), 'Passningar': row.get(f'Passningar{s}', 0),
-                        'Passningssäkerhet': row.get(f'Passningssäkerhet{s}', 0), 'Fouls': row.get(f'Fouls{s}', 0),
-                        'Gula Kort': row.get(g_key, 0), 'Röda Kort': row.get(f'Röda Kort{s}', 0),
-                        'Offside': row.get(f'Offside{s}', 0), 'Räddningar': row.get(f'Räddningar{s}', 0)
+                        'xG': row.get(f'xG{s}', 0),
+                        'Hörnor': row.get(f'Hörnor{s}', 0),
+                        'Bollinnehav': row.get(f'Bollinnehav{s}', 0),
+                        'Skott på mål': row.get(f'Skott på mål{s}', 0),
+                        'Totala Skott': row.get(f'Total Skott{s}', 0),
+                        'Skott Utanför': row.get(f'Skott Utanför{s}', 0),
+                        'Blockerade Skott': row.get(f'Blockerade Skott{s}', 0),
+                        'Skott i Box': row.get(f'Skott i Box{s}', 0),
+                        'Skott utanför Box': row.get(f'Skott utanför Box{s}', 0),
+                        'Passningar': row.get(f'Passningar{s}', 0),
+                        'Passningssäkerhet': row.get(f'Passningssäkerhet{s}', 0),
+                        'Fouls': row.get(f'Fouls{s}', 0),
+                        'Gula Kort': row.get(g_key, 0),
+                        'Röda Kort': row.get(f'Röda Kort{s}', 0),
+                        'Offside': row.get(f'Offside{s}', 0),
+                        'Räddningar': row.get(f'Räddningar{s}', 0)
                     })
                 return target_df.apply(map_row, axis=1).mean().round(2)
 
-            # Hämta data
-            avg_t = get_full_stats(stats_df, selected_team)
-            avg_h = get_full_stats(stats_df[stats_df[HOME_COL] == selected_team], selected_team)
-            avg_a = get_full_stats(stats_df[stats_df[AWAY_COL] == selected_team], selected_team)
+            def display_stat_block(label, data_series, count):
+                st.subheader(f"{label} ({count} matcher)")
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Mål", data_series['Mål'])
+                k2.metric("xG", data_series['xG'])
+                k3.metric("Hörnor", data_series['Hörnor'])
+                k4.metric("Boll", f"{data_series['Bollinnehav']}%")
+                
+                with st.expander(f"Visa all statistik för {label.lower()}"):
+                    ca, cb, cc = st.columns(3)
+                    with ca:
+                        st.write("**Anfall**")
+                        st.write(f"Skott på mål: {data_series['Skott på mål']}")
+                        st.write(f"Totala skott: {data_series['Totala Skott']}")
+                        st.write(f"Skott i box: {data_series['Skott i Box']}")
+                    with cb:
+                        st.write("**Speluppbyggnad**")
+                        st.write(f"Passningar: {data_series['Passningar']}")
+                        st.write(f"Säkerhet: {data_series['Passningssäkerhet']}%")
+                        st.write(f"Offside: {data_series['Offside']}")
+                    with cc:
+                        st.write("**Defensiv/Disciplin**")
+                        st.write(f"Fouls: {data_series['Fouls']}")
+                        st.write(f"Gula kort: {data_series['Gula Kort']}")
+                        st.write(f"Räddningar: {data_series['Räddningar']}")
 
-            # --- PRESENTATION I TABELLFORM FÖR DIREKT ÖVERBLICK ---
-            st.subheader(f"Statistik för {selected_team}")
+            # 1. TOTALT
+            avg_total = get_full_stats(stats_df, selected_team)
+            display_stat_block("TOTALT", avg_total, len(stats_df))
             
-            # Vi skapar en snygg lista för alla rader
-            metrics = [
-                ('⚽ Mål', 'Mål'), ('📈 xG', 'xG'), ('🚩 Hörnor', 'Hörnor'), ('⏱️ Bollinnehav (%)', 'Bollinnehav'),
-                ('🎯 Skott på mål', 'Skott på mål'), ('🚀 Totala Skott', 'Totala Skott'), ('📉 Skott Utanför', 'Skott Utanför'),
-                ('🛡️ Blockerade Skott', 'Blockerade Skott'), ('📦 Skott i Box', 'Skott i Box'), ('🏟️ Skott utanför Box', 'Skott utanför Box'),
-                ('🔄 Passningar', 'Passningar'), ('✅ Passningssäkerhet (%)', 'Passningssäkerhet'), ('⚠️ Fouls', 'Fouls'),
-                ('🟨 Gula Kort', 'Gula Kort'), ('🟥 Röda Kort', 'Röda Kort'), ('🚩 Offside', 'Offside'), ('🧤 Räddningar', 'Räddningar')
-            ]
-
-            # Header
-            head_col1, head_col2, head_col3, head_col4 = st.columns([2, 1, 1, 1])
-            head_col1.write("**Kategori**")
-            head_col2.write("**TOTALT**")
-            head_col3.write("**HEMMA**")
-            head_col4.write("**BORTA**")
             st.divider()
-
-            for label, key in metrics:
-                c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-                c1.write(label)
-                c2.write(f"**{avg_t[key]}**" if avg_t is not None else "-")
-                c3.write(str(avg_h[key]) if avg_h is not None else "-")
-                c4.write(str(avg_a[key]) if avg_a is not None else "-")
-                st.write("---") # En tunn linje mellan varje rad för läsbarhet
+            
+            # 2. HEMMA & BORTA
+            col_h, col_a = st.columns(2)
+            with col_h:
+                h_df = stats_df[stats_df[HOME_COL] == selected_team]
+                if not h_df.empty:
+                    avg_h = get_full_stats(h_df, selected_team)
+                    display_stat_block("🏠 HEMMA", avg_h, len(h_df))
+            with col_a:
+                a_df = stats_df[stats_df[AWAY_COL] == selected_team]
+                if not a_df.empty:
+                    avg_a = get_full_stats(a_df, selected_team)
+                    display_stat_block("✈️ BORTA", avg_a, len(a_df))
