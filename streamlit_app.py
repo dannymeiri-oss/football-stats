@@ -34,6 +34,9 @@ def load_data():
                 data[col] = data[col].astype(str).str.replace(',', '.')
                 data[col] = data[col].str.replace(r'[^0-9.]', '', regex=True)
                 data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+            else:
+                # Om kolumnen saknas helt i arket än, skapa den som nollor
+                data[col] = 0
         
         return data
     except Exception as e:
@@ -129,13 +132,15 @@ if df is not None:
     with tab3:
         REF_COL = 'response.fixture.referee'
         if REF_COL in df.columns:
-            df[REF_COL] = df[REF_COL].fillna("Okänd").apply(lambda x: x.split(',')[0].strip())
+            # Rensar domarnamn
+            df[REF_COL] = df[REF_COL].fillna("Okänd").apply(lambda x: str(x).split(',')[0].strip())
             selected_ref = st.selectbox("Välj domare:", sorted(df[REF_COL].unique()))
             
             if selected_ref:
                 r_df = df[df[REF_COL] == selected_ref].copy()
+                
+                # Felsäkra beräkningar (om kolumner saknas i just de matcherna)
                 avg_y = (r_df['Gula kort Hemma'] + r_df['Gula Kort Borta']).mean().round(2)
-                avg_r = (r_df['Röda Kort Hemma'] + r_df['Röda Kort Borta']).mean().round(2)
                 avg_f = (r_df['Fouls Hemma'] + r_df['Fouls Borta']).mean().round(2)
                 avg_p = (r_df['Straffar Hemma'] + r_df['Straffar Borta']).mean().round(2)
 
@@ -144,25 +149,3 @@ if df is not None:
                 m1.metric("Matcher", len(r_df))
                 m2.metric("Gula / Match", avg_y)
                 m3.metric("Fouls / Match", avg_f)
-                m4.metric("Straffar / Match", avg_p)
-
-                st.markdown(f"""
-                <div style="background-color: #ffffff; padding: 20px; border-radius: 10px; border: 1px solid #ddd; margin-top: 20px;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <div style="flex: 1;">
-                            <p><b>Hemmaplan (Snitt)</b></p>
-                            <p>Gula: {r_df['Gula kort Hemma'].mean().round(2)}</p>
-                            <p>Fouls: {r_df['Fouls Hemma'].mean().round(2)}</p>
-                            <p>Straffar: {r_df['Straffar Hemma'].sum()}</p>
-                        </div>
-                        <div style="flex: 1;">
-                            <p><b>Bortaplan (Snitt)</b></p>
-                            <p>Gula: {r_df['Gula Kort Borta'].mean().round(2)}</p>
-                            <p>Fouls: {r_df['Fouls Borta'].mean().round(2)}</p>
-                            <p>Straffar: {r_df['Straffar Borta'].sum()}</p>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                st.write("### Senaste matcher")
-                st.dataframe(r_df[['response.fixture.date', 'response.teams.home.name', 'response.teams.away.name', 'response.goals.home', 'response.goals.away']])
