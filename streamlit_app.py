@@ -16,11 +16,12 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv
 RAW_DATA_URL = f"{BASE_URL}&gid={GID_RAW}"
 STANDINGS_URL = f"{BASE_URL}&gid={GID_STANDINGS}"
 
-# --- 2. SMARTA ODDS-FUNKTIONER ---
+# --- 2. SMARTA ODDS-FUNKTIONER (FILTRERADE PÅ PREMIER LEAGUE) ---
 @st.cache_data(ttl=600)
 def fetch_all_odds():
     if not ODDS_API_KEY: return None
-    url = f"https://api.the-odds-api.com/v4/sports/soccer/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h,totals&bookmakers=unibet"
+    # ÄNDRING: Vi fokuserar specifikt på engelska Premier League för att hitta rätt matcher direkt
+    url = f"https://api.the-odds-api.com/v4/sports/soccer_england_premier_league/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h,totals&bookmakers=unibet"
     try:
         res = requests.get(url)
         if res.status_code == 429: return "QUOTA_EXCEEDED"
@@ -32,18 +33,17 @@ def get_match_odds_from_cache(home_sheet, away_sheet, all_odds):
     
     def normalize(name):
         name = str(name).lower()
-        # Manuella alias för att säkra Manchester/Tottenham
+        # Utökad alias-lista för Premier League
         if "manchester united" in name or "man utd" in name: return "manchesterunited"
         if "manchester city" in name or "man city" in name: return "manchestercity"
-        if "tottenham" in name: return "tottenhamhotspur"
+        if "tottenham" in name or "spurs" in name: return "tottenhamhotspur"
+        if "newcastle" in name: return "newcastleunited"
         return "".join(filter(str.isalnum, name))
 
     h_s, a_s = normalize(home_sheet), normalize(away_sheet)
     
     for match in all_odds:
         h_api, a_api = normalize(match['home_team']), normalize(match['away_team'])
-        
-        # Kolla om namnen matchar efter normalisering
         if h_s == h_api and a_s == a_api:
             h2h, totals = None, None
             if 'bookmakers' in match and len(match['bookmakers']) > 0:
@@ -99,7 +99,6 @@ def stat_comparison_row(label, val1, val2, is_pct=False):
 
 # --- 4. HUVUDLAYOUT ---
 if df is not None:
-    # --- VY: STATISTIK FÖR SPELAD MATCH ---
     if st.session_state.view_match is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_match = None
@@ -119,7 +118,6 @@ if df is not None:
                 stat_comparison_row("Bollinnehav", int(r['Bollinnehav Hemma']), int(r['Bollinnehav Borta']), True)
                 stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
 
-    # --- VY: H2H ANALYS FÖR KOMMANDE MATCH ---
     elif st.session_state.view_h2h is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_h2h = None
@@ -128,58 +126,49 @@ if df is not None:
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
         st.markdown(f"<h1 style='text-align: center;'>H2H Analys: {h_team} vs {a_team}</h1>", unsafe_allow_html=True)
         
-        # Hämta historisk data för snittberäkning
         h_stats = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
         a_stats = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
         
         main_c1, main_c2, main_c3 = st.columns([1, 5, 1])
         with main_c2:
             if not h_stats.empty and not a_stats.empty:
-                st.markdown("<h3 style='text-align: center;'>🎯 Total Förväntad Matchstatistik</h3>", unsafe_allow_html=True)
+                st.markdown("<h3 style='text-align: center;'>🎯 Förväntad Matchstatistik</h3>", unsafe_allow_html=True)
                 tc1, tc2, tc3, tc4 = st.columns(4)
-                
-                exp_goals = h_stats['response.goals.home'].mean() + a_stats['response.goals.away'].mean()
-                exp_xg = h_stats['xG Hemma'].mean() + a_stats['xG Borta'].mean()
-                exp_corners = h_stats['Hörnor Hemma'].mean() + a_stats['Hörnor Borta'].mean()
-                exp_cards = h_stats['Gula kort Hemma'].mean() + a_stats['Gula Kort Borta'].mean()
-                
-                tc1.metric("Förväntade Mål", round(exp_goals, 2))
-                tc2.metric("Förväntad xG", round(exp_xg, 2))
-                tc3.metric("Hörnor", round(exp_corners, 1))
-                tc4.metric("Gula Kort", round(exp_cards, 1))
+                tc1.metric("Mål", round(h_stats['response.goals.home'].mean() + a_stats['response.goals.away'].mean(), 2))
+                tc2.metric("xG", round(h_stats['xG Hemma'].mean() + a_stats['xG Borta'].mean(), 2))
+                tc3.metric("Hörnor", round(h_stats['Hörnor Hemma'].mean() + a_stats['Hörnor Borta'].mean(), 1))
+                tc4.metric("Gula Kort", round(h_stats['Gula kort Hemma'].mean() + a_stats['Gula Kort Borta'].mean(), 1))
                 
                 st.divider()
                 st.markdown("<h3 style='text-align: center;'>💸 Marknadsodds (Unibet)</h3>", unsafe_allow_html=True)
                 all_market_odds = fetch_all_odds()
                 
                 if all_market_odds == "QUOTA_EXCEEDED":
-                    st.error("Odds-kvoten är slut för denna månad.")
+                    st.error("Odds-kvoten är slut.")
                 else:
                     h2h_o, totals = get_match_odds_from_cache(h_team, a_team, all_market_odds)
                     if h2h_o or totals:
                         oc1, oc2 = st.columns(2)
                         with oc1:
                             if h2h_o:
-                                st.write("**Matchodds (1X2)**")
+                                st.write("**1X2 Odds**")
                                 for o in sorted(h2h_o, key=lambda x: x['name'] == 'Draw'):
                                     st.write(f"{o['name']}: **{o['price']}**")
                         with oc2:
                             if totals:
-                                st.write("**Mål Ö/U (2.5)**")
+                                st.write("**Över/Under 2.5**")
                                 for o in totals:
                                     if o.get('point') == 2.5:
                                         label = "Över" if o['name'].lower() == "over" else "Under"
                                         st.write(f"{label} 2.5: **{o['price']}**")
                     else:
-                        st.info(f"Inga odds matchades för {h_team} vs {a_team}.")
+                        st.info(f"Inga odds hittades för Premier League-matchen {h_team} vs {a_team}.")
 
                 st.divider()
-                st.markdown("<h3 style='text-align: center;'>📊 Lagjämförelse (Snitt Hemma vs Borta)</h3>", unsafe_allow_html=True)
-                comp_cols = [("Mål", 'response.goals.home', 'response.goals.away'), ("xG", 'xG Hemma', 'xG Borta'), ("Bollinnehav", 'Bollinnehav Hemma', 'Bollinnehav Borta'), ("Hörnor", 'Hörnor Hemma', 'Hörnor Borta'), ("Gula Kort", 'Gula kort Hemma', 'Gula Kort Borta')]
-                for label, h_col, a_col in comp_cols:
-                    stat_comparison_row(label, round(h_stats[h_col].mean(), 2), round(a_stats[a_col].mean(), 2), "Bollinnehav" in label)
+                st.markdown("<h3 style='text-align: center;'>📊 Snittjämförelse</h3>", unsafe_allow_html=True)
+                for label, h_col, a_col in [("Mål", 'response.goals.home', 'response.goals.away'), ("xG", 'xG Hemma', 'xG Borta'), ("Hörnor", 'Hörnor Hemma', 'Hörnor Borta'), ("Gula Kort", 'Gula kort Hemma', 'Gula Kort Borta')]:
+                    stat_comparison_row(label, round(h_stats[h_col].mean(), 2), round(a_stats[a_col].mean(), 2))
 
-    # --- VY: HUVUDMENY ---
     else:
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Matcher", "🛡️ Lagstatistik", "⚖️ Domaranalys", "🏆 Tabell"])
         with tab1:
@@ -203,17 +192,13 @@ if df is not None:
                         else: st.session_state.view_match = r
                         st.rerun()
 
-    # --- 5. PERMANENT FELSÖKNINGSLOGG ---
     st.divider()
-    with st.expander("🛠️ API-Felsökning (Använd denna om oddsen saknas)"):
+    with st.expander("🛠️ API-Felsökning (Visar nu Premier League)"):
         raw_odds = fetch_all_odds()
-        if raw_odds == "QUOTA_EXCEEDED":
-            st.error("DIN KVOTA ÄR SLUT (500/500)")
-        elif raw_odds:
-            st.write(f"API:et hittade {len(raw_odds)} matcher i minnet just nu.")
-            st.write("Första matchen i API-svaret:", raw_odds[0] if len(raw_odds)>0 else "Tomt")
-        else:
-            st.write("API:et svarar inte. Kontrollera din nyckel.")
+        st.write("Aktuell Liga: Premier League")
+        st.write(f"Antal matcher hittade: {len(raw_odds) if isinstance(raw_odds, list) else 0}")
+        if isinstance(raw_odds, list) and len(raw_odds) > 0:
+            st.write("Match 1 i kön:", raw_odds[0]['home_team'], "vs", raw_odds[0]['away_team'])
 
 else:
     st.error("Kunde inte ladda data.")
