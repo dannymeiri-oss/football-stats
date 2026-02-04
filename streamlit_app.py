@@ -8,14 +8,19 @@ import numpy as np
 # --- 1. KONFIGURATION ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
+# CSS för layout och klocka
 st.markdown("""
     <style>
     .stDataFrame { margin-left: auto; margin-right: auto; }
     [data-testid="stMetricValue"] { font-size: 1.8rem !important; }
-    .alert-container { display: flex; align-items: center; justify-content: flex-start; gap: 10px; }
-    .bell-icon { font-size: 1.5rem; }
+    .main-title { text-align: center; color: #1E1E1E; margin-bottom: 0px; }
+    .sub-title { text-align: center; color: #666; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
+
+# Återställer rubrikerna längst upp
+st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
+st.markdown("<p class='sub-title'>Avancerad fotbollsanalys och live-odds</p>", unsafe_allow_html=True)
 
 API_KEY = "6343cd4636523af501b585a1b595ad26" 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
@@ -91,7 +96,7 @@ if df is not None:
             st.session_state.view_match = None
             st.rerun()
         r = st.session_state.view_match
-        st.markdown(f"<h1 style='text-align: center;'>{r['response.teams.home.name']} {int(r['response.goals.home'])} - {int(r['response.goals.away'])} {r['response.teams.away.name']}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h2 style='text-align: center;'>{r['response.teams.home.name']} {int(r['response.goals.home'])} - {int(r['response.goals.away'])} {r['response.teams.away.name']}</h2>", unsafe_allow_html=True)
         st.divider()
         stat_comparison_row("xG", round(r['xG Hemma'], 2), round(r['xG Borta'], 2))
         stat_comparison_row("Bollinnehav", int(r['Bollinnehav Hemma']), int(r['Bollinnehav Borta']), True)
@@ -110,7 +115,7 @@ if df is not None:
         h_stats = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
         a_stats = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
         
-        # Metrics & Jämförelse
+        # Metrics & Jämförelse direkt under
         tc1, tc2, tc3, tc4 = st.columns(4)
         tc1.metric("Mål snitt", round(h_stats['response.goals.home'].mean() + a_stats['response.goals.away'].mean(), 2))
         tc2.metric("xG snitt", round(h_stats['xG Hemma'].mean() + a_stats['xG Borta'].mean(), 2))
@@ -125,7 +130,7 @@ if df is not None:
         st.divider()
 
         # ODDS
-        st.markdown("<h4 style='text-align: center;'>💸 Live Odds (API-Football)</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center;'>💸 Live Odds</h4>", unsafe_allow_html=True)
         odds = fetch_api_football_odds(m.get('response.fixture.id'))
         if odds:
             o1, o2, o3 = st.columns(3)
@@ -182,7 +187,7 @@ if df is not None:
                     a_c = df[df['response.teams.away.name'] == a_name]['Gula Kort Borta'].mean()
                     if (np.nan_to_num(h_c) + np.nan_to_num(a_c)) >= 3.4: show_alert = True
 
-                c_i, c_b = st.columns([4, 2]) # Justerad bredd för att få plats med båda
+                c_i, c_b = st.columns([4, 2]) 
                 score_text = f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}" if mode=="Resultat" else "VS"
                 
                 with c_i:
@@ -196,7 +201,6 @@ if df is not None:
                         </div>
                     ''', unsafe_allow_html=True)
                 with c_b:
-                    # Klockan till HÖGER om knappen
                     col_btn, col_bell = st.columns([3, 1])
                     with col_btn:
                         if st.button("H2H", key=f"btn{idx}", use_container_width=True):
