@@ -10,10 +10,12 @@ SHEET_URL = "https://docs.google.com/spreadsheets/d/1eHU1H7pqNp_kOoMqbhrL6Cxc2bV
 def load_data():
     try:
         data = pd.read_csv(SHEET_URL)
+        # 1. Rensa alla kolumnnamn från osynliga mellanslag i början/slutet
+        data.columns = [col.strip() for col in data.columns]
+        
         data = data.dropna(subset=['response.fixture.id'])
         
-        # --- DATATVÄTT (Fixar 0.0-problemet) ---
-        # Dessa kolumner behöver ofta tvättas för att medelvärden ska fungera
+        # 2. Lista på kolumner att tvätta (numerisk konvertering)
         cols_to_clean = [
             'xG Hemma', 'xG Borta', 
             'Hörnor Hemma', 'Hörnor Borta', 
@@ -23,9 +25,7 @@ def load_data():
         
         for col in cols_to_clean:
             if col in data.columns:
-                # 1. Gör om allt till strängar för att kunna ersätta tecken
-                # 2. Byt ut komma mot punkt (om det finns)
-                # 3. Gör om till siffror, felaktiga värden (som '-') blir NaN och sen 0
+                # Byt ut eventuella komman och gör till siffror
                 data[col] = data[col].astype(str).str.replace(',', '.')
                 data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
         
@@ -56,29 +56,31 @@ if df is not None:
         HOME_COL = 'response.teams.home.name'
         AWAY_COL = 'response.teams.away.name'
         
+        # Hämta laglista
         all_teams = sorted(pd.concat([df[HOME_COL], df[AWAY_COL]]).unique())
         selected_team = st.selectbox("Välj ett lag:", all_teams)
 
         if selected_team:
-            # Filtrera bara färdiga matcher
+            # Filtrera bara färdiga matcher (FT)
             team_df = df[((df[HOME_COL] == selected_team) | (df[AWAY_COL] == selected_team)) & 
                         (df['response.fixture.status.short'] == 'FT')].copy()
 
             if not team_df.empty:
+                # Plocka statistik baserat på hemma/borta-roll
                 def get_team_stats(row):
                     if row[HOME_COL] == selected_team:
                         return pd.Series([
-                            row['response.goals.home'], 
-                            row['xG Hemma'], 
-                            row['Gula kort Hemma'], 
-                            row['Hörnor Hemma']
+                            row.get('response.goals.home', 0), 
+                            row.get('xG Hemma', 0), 
+                            row.get('Gula kort Hemma', 0), 
+                            row.get('Hörnor Hemma', 0)
                         ])
                     else:
                         return pd.Series([
-                            row['response.goals.away'], 
-                            row['xG Borta'], 
-                            row['Gula Kort Borta'], 
-                            row['Hörnor Borta']
+                            row.get('response.goals.away', 0), 
+                            row.get('xG Borta', 0), 
+                            row.get('Gula Kort Borta', 0), 
+                            row.get('Hörnor Borta', 0)
                         ])
 
                 stats_df = team_df.apply(get_team_stats, axis=1)
@@ -92,11 +94,12 @@ if df is not None:
                 m4.metric("Snitt Hörnor", round(stats_df['Hörnor'].mean(), 2))
 
                 st.divider()
-                st.subheader("Matchhistorik")
+                st.subheader(f"Historik: {selected_team}")
+                # Visa tabell för att kontrollera att siffrorna finns där
                 st.dataframe(team_df[[
                     'response.fixture.date', HOME_COL, AWAY_COL, 
                     'response.goals.home', 'response.goals.away', 
-                    'xG Hemma', 'xG Borta', 'Hörnor Hemma', 'Hörnor Borta'
+                    'Hörnor Hemma', 'Hörnor Borta'
                 ]].sort_values('response.fixture.date', ascending=False))
             else:
-                st.info("Inga spelade matcher hittades.")
+                st.info("Inga spelade matcher hittades för detta lag.")
