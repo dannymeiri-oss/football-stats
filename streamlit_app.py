@@ -34,7 +34,7 @@ def get_sport_key_from_league_name(league_name):
     }
     return mapping.get(ln, "soccer_epl")
 
-# --- 3. SMARTA ODDS-FUNKTIONER (MED DEBUG-INFO) ---
+# --- 3. SMARTA ODDS-FUNKTIONER (FÖRBÄTTRAD LAG-MATCHNING) ---
 @st.cache_data(ttl=600)
 def fetch_odds_by_league(sport_key):
     if not ODDS_API_KEY: return None, "Ingen API-nyckel"
@@ -49,18 +49,27 @@ def fetch_odds_by_league(sport_key):
 def get_match_odds_from_cache(home_sheet, away_sheet, all_odds):
     if not all_odds or all_odds == "QUOTA_EXCEEDED": return None, None
     
-    def clean(name):
+    def clean_team_name(name):
         name = str(name).lower()
-        if "manchester united" in name or "man utd" in name: return "manutd"
-        if "manchester city" in name or "man city" in name: return "mancity"
-        if "tottenham" in name: return "tottenham"
+        # Hantera vanliga förkortningar/smeknamn
+        name = name.replace("wolverhampton wanderers", "wolves")
+        name = name.replace("manchester united", "manutd").replace("man utd", "manutd")
+        name = name.replace("manchester city", "mancity").replace("man city", "mancity")
+        name = name.replace("tottenham hotspur", "tottenham")
+        name = name.replace("leicester city", "leicester")
+        name = name.replace("brighton & hove albion", "brighton")
+        name = name.replace("west ham united", "westham")
+        name = name.replace("newcastle united", "newcastle")
+        # Ta bort allt utom bokstäver
         return "".join(filter(str.isalnum, name))
 
-    h_s, a_s = clean(home_sheet), clean(away_sheet)
+    h_s, a_s = clean_team_name(home_sheet), clean_team_name(away_sheet)
     
     for match in all_odds:
-        h_api, a_api = clean(match['home_team']), clean(match['away_team'])
-        if h_s == h_api and a_s == a_api:
+        h_api, a_api = clean_team_name(match['home_team']), clean_team_name(match['away_team'])
+        
+        # Kolla om namnen matchar (eller innehåller varandra)
+        if (h_s in h_api or h_api in h_s) and (a_s in a_api or a_api in a_s):
             h2h, totals = None, None
             if 'bookmakers' in match and len(match['bookmakers']) > 0:
                 for mkt in match['bookmakers'][0]['markets']:
@@ -146,7 +155,7 @@ if df is not None:
             
             st.divider()
             
-            # --- ODDS-SEKTION MED DEBUG ---
+            # --- ODDS-SEKTION ---
             s_key = get_sport_key_from_league_name(league_name)
             all_market_odds, debug_url = fetch_odds_by_league(s_key)
             
@@ -168,15 +177,14 @@ if df is not None:
                 else:
                     st.info(f"Inga odds hittades för {h_team} vs {a_team} i {s_key}.")
 
-            # --- DEBUG CONSOLE (UTVIKBAR) ---
             with st.expander("🛠️ Felsökning: API-anrop"):
-                st.write(f"**Identifierad liga:** {league_name}")
-                st.write(f"**Använd Sport Key:** {s_key}")
-                st.write(f"**Fullständig URL:** {debug_url}")
+                st.write(f"**Liga:** {league_name} ({s_key})")
                 if all_market_odds and all_market_odds != "QUOTA_EXCEEDED":
-                    st.write(f"**Antal matcher i API-svar:** {len(all_market_odds)}")
-                else:
-                    st.write("**API Status:** Inga data eller felkod")
+                    st.write(f"**API hittade {len(all_market_odds)} matcher.**")
+                    st.write("**Lag i API:et just nu:**")
+                    # Visar de första 3 matcherna för att du ska se hur namnen ser ut i API:et
+                    for match in all_market_odds[:3]:
+                        st.write(f"- {match['home_team']} vs {match['away_team']}")
 
             st.divider()
             st.markdown("<h3 style='text-align: center;'>📊 Lagjämförelse</h3>", unsafe_allow_html=True)
