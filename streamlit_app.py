@@ -59,7 +59,7 @@ standings_df = load_data(STANDINGS_URL)
 if 'view_match' not in st.session_state: st.session_state.view_match = None
 if 'view_h2h' not in st.session_state: st.session_state.view_h2h = None
 
-# --- HJÄLPFUNKTION FÖR RADER ---
+# --- HJÄLPFUNKTIONER ---
 def stat_comparison_row(label, val1, val2, is_pct=False):
     c1, c2, c3 = st.columns([2, 1, 2])
     suffix = "%" if is_pct else ""
@@ -90,7 +90,7 @@ if df is not None:
             stat_comparison_row("Bollinnehav", int(r['Bollinnehav Hemma']), int(r['Bollinnehav Borta']), True)
             stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
 
-    # --- VY 2: H2H MED SNITT-STATISTIK (KOMMANDE) ---
+    # --- VY 2: H2H MED TOTAL FÖRVÄNTAN (KOMMANDE) ---
     elif st.session_state.view_h2h is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_h2h = None
@@ -102,42 +102,46 @@ if df is not None:
         
         st.header(f"H2H Analys: {h_team} vs {a_team}")
         
-        # Beräkna snitt för hemma-laget (hemma) och borta-laget (borta)
         h_stats = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
         a_stats = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
         
-        st.subheader("📊 Förväntad matchbild (Lagens snitt Hemma vs Borta)")
         if not h_stats.empty and not a_stats.empty:
-            c1, c2 = st.columns(2)
-            with c1:
-                st.write(f"**{h_team}** (Hemma-snitt)")
-                st.metric("Mål", round(h_stats['response.goals.home'].mean(), 2))
-                st.metric("xG", round(h_stats['xG Hemma'].mean(), 2))
-            with c2:
-                st.write(f"**{a_team}** (Borta-snitt)")
-                st.metric("Mål", round(a_stats['response.goals.away'].mean(), 2))
-                st.metric("xG", round(a_stats['xG Borta'].mean(), 2))
+            # --- NY SEKTION: TOTAL FÖRVÄNTAN ---
+            st.subheader("🎯 Total Förväntad Matchstatistik")
+            tc1, tc2, tc3, tc4 = st.columns(4)
+            
+            exp_goals = h_stats['response.goals.home'].mean() + a_stats['response.goals.away'].mean()
+            exp_xg = h_stats['xG Hemma'].mean() + a_stats['xG Borta'].mean()
+            exp_corners = h_stats['Hörnor Hemma'].mean() + a_stats['Hörnor Borta'].mean()
+            exp_cards = h_stats['Gula kort Hemma'].mean() + a_stats['Gula Kort Borta'].mean()
+            
+            tc1.metric("Förväntade Mål", round(exp_goals, 2))
+            tc2.metric("Förväntad xG", round(exp_xg, 2))
+            tc3.metric("Förväntade Hörnor", round(exp_corners, 1))
+            tc4.metric("Förväntade Gula Kort", round(exp_cards, 1))
             
             st.divider()
-            # De 32 datapunkterna i jämförelse
+            
+            st.subheader("📊 Lagjämförelse (Snitt Hemma vs Borta)")
             cols = [
+                ("Mål", 'response.goals.home', 'response.goals.away'),
                 ("xG", 'xG Hemma', 'xG Borta'),
                 ("Bollinnehav", 'Bollinnehav Hemma', 'Bollinnehav Borta'),
                 ("Skott på mål", 'Skott på mål Hemma', 'Skott på mål Borta'),
-                ("Totala Skott", 'Total Skott Hemma', 'Total Skott Borta'),
-                ("Skott i Box", 'Skott i Box Hemma', 'Skott i Box Borta'),
                 ("Hörnor", 'Hörnor Hemma', 'Hörnor Borta'),
                 ("Fouls", 'Fouls Hemma', 'Fouls Borta'),
                 ("Gula Kort", 'Gula kort Hemma', 'Gula Kort Borta'),
-                ("Passnings%", 'Passningssäkerhet Hemma', 'Passningssäkerhet Borta')
             ]
             for label, h_col, a_col in cols:
-                is_p = "%" in label
-                stat_comparison_row(label, round(h_stats[h_col].mean(), 1), round(a_stats[a_col].mean(), 1), is_p)
+                is_p = "%" in label or "Bollinnehav" in label
+                stat_comparison_row(label, round(h_stats[h_col].mean(), 2), round(a_stats[a_col].mean(), 2), is_p)
         
         st.subheader("📜 Senaste möten")
         h2h_matches = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
-        st.dataframe(h2h_matches[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']].sort_values('datetime', ascending=False), hide_index=True)
+        if not h2h_matches.empty:
+            st.dataframe(h2h_matches[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']].sort_values('datetime', ascending=False), hide_index=True)
+        else:
+            st.write("Inga tidigare möten hittades.")
 
     # --- VY 3: HUVUDTABBAR ---
     else:
