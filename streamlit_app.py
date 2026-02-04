@@ -1,61 +1,69 @@
 import streamlit as st
 import pandas as pd
 
-# --- 1. LADDA DATA (Samma som förut) ---
-@st.cache_data(ttl=600)
+# --- KONFIGURATION ---
+# Ersätt med din faktiska länk från Google Sheets (viktigt att den slutar på export?format=csv)
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw/export?format=csv&gid=0"
+
+@st.cache_data(ttl=300)
 def load_data():
-    # Här använder du din befintliga länk till Google Sheets CSV-export
-    sheet_url = "DIN_GOOGLE_SHEETS_URL_HÄR" 
-    df = pd.read_csv(sheet_url)
-    return df
+    return pd.read_csv(SHEET_URL)
 
-df = load_data()
-
-# --- 2. NAVIGATION I SIDOFÄLTET ---
-st.sidebar.title("⚽ Fotbollsanalys v1.0")
-sida = st.sidebar.radio("Gå till:", ["Dagens Matcher", "Lagstatistik & Snitt"])
-
-# --- FLIK 1: DIN BEFINTLIGA MATCHLISTA ---
-if sida == "Dagens Matcher":
-    st.title("Dagens Matcher")
-    # ... här ligger din nuvarande kod för att visa listan och analysen ...
-    st.write("Här visas din nuvarande matchlista...")
-
-# --- FLIK 2: DEN NYA LAGSTATISTIKEN ---
-elif sida == "Lagstatistik & Snitt":
-    st.title("🛡️ Laganalys & Medelvärden")
+try:
+    df = load_data()
     
-    # Hämta alla unika lag
-    alla_lag = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
-    valt_lag = st.selectbox("Välj ett lag:", alla_lag)
+    # NAVIGATION
+    st.sidebar.title("📊 Navigering")
+    page = st.sidebar.radio("Välj sida:", ["Dagens Matcher", "Lagstatistik (Medel)"])
 
-    if valt_lag:
-        # Filtrera ut matcher som är klara (FT) för det valda laget
-        lag_df = df[((df['response.teams.home.name'] == valt_lag) | 
-                     (df['response.teams.away.name'] == valt_lag)) & 
-                    (df['response.fixture.status.short'] == 'FT')].copy()
+    # --- SIDA: DAGENS MATCHER ---
+    if page == "Dagens Matcher":
+        st.title("⚽ Dagens Matcher")
+        st.write("Här kan du se dina vanliga analyser.")
+        # [Här klistrar du in din gamla kod för matchlistan]
 
-        if not lag_df.empty:
-            # Funktion för att plocka rätt siffra oavsett om laget spela Hemma eller Borta
-            def get_team_metrics(row):
-                if row['response.teams.home.name'] == valt_lag:
-                    return pd.Series([row['response.goals.home'], row['expected_goals H'], row['Gula kort Hemma'], row['Hörnor Hemma']])
-                else:
-                    return pd.Series([row['response.goals.away'], row['expected_goals B'], row['Gula kort Borta'], row['Hörnor Borta']])
+    # --- SIDA: LAGSTATISTIK ---
+    elif page == "Lagstatistik (Medel)":
+        st.title("🛡️ Laganalys per Lag")
+        
+        # Hämta unika lag (vi använder kolumnnamnen från din bild)
+        home_teams = df['response.teams.home.name'].unique()
+        away_teams = df['response.teams.away.name'].unique()
+        all_teams = sorted(list(set(home_teams) | set(away_teams)))
+        
+        selected_team = st.selectbox("Välj ett lag för att se snittstatistik:", all_teams)
+        
+        if selected_team:
+            # Filtrera fram bara matcher som är klara (FT)
+            finished_games = df[df['response.fixture.status.short'] == 'FT']
+            
+            # Matcher där laget spelat hemma ELLER borta
+            team_df = finished_games[(finished_games['response.teams.home.name'] == selected_team) | 
+                                    (finished_games['response.teams.away.name'] == selected_team)]
+            
+            if not team_df.empty:
+                # Beräkna medelvärden (Vi anpassar efter dina kolumner)
+                total_games = len(team_df)
+                
+                # Exempel på logik för att hämta RÄTT mål oavsett hemma/borta
+                goals = team_df.apply(lambda x: x['response.goals.home'] if x['response.teams.home.name'] == selected_team else x['response.goals.away'], axis=1)
+                
+                # Här mappar vi mot de nya statistik-kolumnerna vi skapade (AV-CA)
+                # OBS: Se till att namnen matchar exakt dina rubriker i arket!
+                yellow_cards = team_df.apply(lambda x: x['Gula kort Hemma'] if x['response.teams.home.name'] == selected_team else x['Gula kort Borta'], axis=1)
+                
+                st.subheader(f"Statistik för {selected_team} (Baserat på {total_games} matcher)")
+                
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Medel mål", round(goals.mean(), 2))
+                col2.metric("Medel Gula kort", round(yellow_cards.mean(), 2))
+                col3.metric("Antal spelade", total_games)
+                
+                st.divider()
+                st.write("Senaste resultaten:")
+                st.dataframe(team_df[['response.fixture.date', 'response.teams.home.name', 'response.teams.away.name', 'response.goals.home', 'response.goals.away']])
+            else:
+                st.info("Hittade inga spelade matcher (FT) för detta lag ännu.")
 
-            # Vi mappar mot dina kolumner i Raw Data
-            team_stats = lag_df.apply(get_team_metrics, axis=1)
-            team_stats.columns = ['Mål', 'xG', 'Gula', 'Hörnor']
-
-            # Visa snygga "KPI-boxar"
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Mål/match", round(team_stats['Mål'].mean(), 2))
-            c2.metric("xG/match", round(team_stats['xG'].mean(), 2))
-            c3.metric("Gula/match", round(team_stats['Gula'].mean(), 2))
-            c4.metric("Hörnor/match", round(team_stats['Hörnor'].mean(), 2))
-
-            st.divider()
-            st.subheader(f"Historik: {valt_lag}")
-            st.dataframe(lag_df[['response.fixture.date', 'response.teams.home.name', 'response.teams.away.name', 'response.goals.home', 'response.goals.away']])
-        else:
-            st.warning("Inga spelade matcher (FT) hittades för detta lag än.")
+except Exception as e:
+    st.error(f"Kunde inte ladda datan. Kontrollera URL:en. Felmeddelande: {e}")
