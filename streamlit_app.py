@@ -8,7 +8,6 @@ import numpy as np
 # --- 1. KONFIGURATION (LÅST) ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
-# Din API-nyckel för API-Football (LÅST)
 API_KEY = "6343cd4636523af501b585a1b595ad26" 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 GID_RAW = "0"
@@ -18,7 +17,7 @@ BASE_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv
 RAW_DATA_URL = f"{BASE_URL}&gid={GID_RAW}"
 STANDINGS_URL = f"{BASE_URL}&gid={GID_STANDINGS}"
 
-# --- 2. ODDS-MOTOR (API-FOOTBALL PRO - LÅST) ---
+# --- 2. ODDS-MOTOR (API-FOOTBALL) ---
 @st.cache_data(ttl=600)
 def fetch_api_football_odds(fixture_id):
     if not fixture_id: return None
@@ -37,10 +36,9 @@ def fetch_api_football_odds(fixture_id):
             if m['name'] == "Cards Over/Under": odds_dict['Cards'] = m['values']
             if m['name'] == "Goals Over/Under": odds_dict['Totals'] = m['values']
         return odds_dict
-    except:
-        return None
+    except: return None
 
-# --- 3. DATAHANTERING (LÅST) ---
+# --- 3. DATAHANTERING ---
 @st.cache_data(ttl=60)
 def load_data(url):
     try:
@@ -79,9 +77,9 @@ def stat_comparison_row(label, val1, val2, is_pct=False):
     c2.markdown(f"<div style='text-align:center; color:#888; font-weight:bold;'>{label}</div>", unsafe_allow_html=True)
     c3.markdown(f"<div style='text-align:left; font-size:1.1em;'>{val2}{suffix}</div>", unsafe_allow_html=True)
 
-# --- 4. VISUALISERING (LÅST) ---
+# --- 4. VISUALISERING ---
 if df is not None:
-    # --- VY: STATISTIK (EFTER MATCH) ---
+    # --- VY: STATISTIK (RESULTAT) ---
     if st.session_state.view_match is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_match = None
@@ -94,21 +92,20 @@ if df is not None:
         stat_comparison_row("Hörnor", int(r['Hörnor Hemma']), int(r['Hörnor Borta']))
         stat_comparison_row("Gula Kort", int(r['Gula kort Hemma']), int(r['Gula Kort Borta']))
 
-    # --- VY: ANALYS (INFÖR MATCH / H2H) ---
+    # --- VY: ANALYS (H2H) ---
     elif st.session_state.view_h2h is not None:
         if st.button("← Tillbaka"): 
             st.session_state.view_h2h = None
             st.rerun()
         m = st.session_state.view_h2h
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
-        st.markdown(f"<h1 style='text-align: center;'>H2H: {h_team} vs {a_team}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='text-align: center;'>H2H Analys: {h_team} vs {a_team}</h1>", unsafe_allow_html=True)
         
-        # Hämta historik
-        h_stats = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False)
-        a_stats = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False)
+        # 1. SNITT & METRICS
+        h_stats = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
+        a_stats = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
         
         if not h_stats.empty or not a_stats.empty:
-            # Metrics
             tc1, tc2, tc3, tc4 = st.columns(4)
             tc1.metric("Mål snitt", round(h_stats['response.goals.home'].mean() + a_stats['response.goals.away'].mean(), 2))
             tc2.metric("xG snitt", round(h_stats['xG Hemma'].mean() + a_stats['xG Borta'].mean(), 2))
@@ -117,7 +114,7 @@ if df is not None:
             
             st.divider()
             
-            # Odds
+            # 2. ODDS
             st.markdown("<h4 style='text-align: center;'>💸 Live Odds (Unibet via API-Football)</h4>", unsafe_allow_html=True)
             odds = fetch_api_football_odds(m.get('response.fixture.id'))
             if odds:
@@ -142,16 +139,25 @@ if df is not None:
             
             st.divider()
 
-            # Historik-tabeller (LÅSTA)
-            st.subheader(f"Senaste matcher: {h_team} (Hemma)")
-            st.dataframe(h_stats[['datetime', 'response.teams.away.name', 'response.goals.home', 'response.goals.away', 'xG Hemma', 'Hörnor Hemma', 'Gula kort Hemma']].head(5), use_container_width=True)
+            # 3. HISTORISKA MÖTEN (ÅTERSTÄLLD LOGIK OCH HEADERS)
+            st.subheader("📜 Senaste inbördes möten")
+            h2h_matches = df[
+                ((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
+                ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))
+            ].copy()
             
-            st.subheader(f"Senaste matcher: {a_team} (Borta)")
-            st.dataframe(a_stats[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'xG Borta', 'Hörnor Borta', 'Gula Kort Borta']].head(5), use_container_width=True)
+            if not h2h_matches.empty:
+                h2h_matches = h2h_matches[h2h_matches['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
+                h2h_display = h2h_matches[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']].copy()
+                h2h_display['datetime'] = h2h_display['datetime'].dt.strftime('%d %b %Y %H:%M')
+                h2h_display.columns = ['Datum', 'Hemmalag', ' ', '  ', 'Bortalag']
+                st.dataframe(h2h_display, hide_index=True, use_container_width=True)
+            else:
+                st.info("Inga tidigare möten hittades i databasen.")
 
             st.divider()
             
-            # Jämförelse-rader
+            # 4. JÄMFÖRELSE-RADER
             stat_comparison_row("Mål/Match", round(h_stats['response.goals.home'].mean(), 2), round(a_stats['response.goals.away'].mean(), 2))
             stat_comparison_row("xG/Match", round(h_stats['xG Hemma'].mean(), 2), round(a_stats['xG Borta'].mean(), 2))
             stat_comparison_row("Hörnor snitt", round(h_stats['Hörnor Hemma'].mean(), 1), round(a_stats['Hörnor Borta'].mean(), 1))
