@@ -4,7 +4,7 @@ import requests
 from datetime import datetime
 import numpy as np
 
-# --- 1. KONFIGURATION (PERFEKT LAYOUT) ---
+# --- 1. KONFIGURATION (PERFEKT LAYOUT - UPDATED BELL LOGIC) ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
 st.markdown("""
@@ -18,7 +18,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-title'>Perfekt Layout - Kortanalys Aktiv</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-title'>Perfekt Layout - Global Kortanalys</p>", unsafe_allow_html=True)
 
 API_KEY = "6343cd4636523af501b585a1b595ad26" 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
@@ -126,10 +126,17 @@ if df is not None:
                 
                 show_alert = False
                 if mode == "Nästa matcher":
-                    # --- NY LOGIK: GULA KORT ISTÄLLET FÖR MÅL ---
-                    h_card_avg = df[df['response.teams.home.name'] == h_name]['Gula kort Hemma'].mean()
-                    a_card_avg = df[df['response.teams.away.name'] == a_name]['Gula Kort Borta'].mean()
-                    if (np.nan_to_num(h_card_avg) + np.nan_to_num(a_card_avg)) > 3.4: show_alert = True
+                    # --- NY STARKARE LOGIK FÖR KLOCKAN ---
+                    # Beräkna totalt snitt för hemmalaget (alla deras matcher)
+                    h_all = df[(df['response.teams.home.name'] == h_name) | (df['response.teams.away.name'] == h_name)]
+                    h_avg = (h_all['Gula kort Hemma'].where(h_all['response.teams.home.name'] == h_name, h_all['Gula Kort Borta'])).mean()
+                    
+                    # Beräkna totalt snitt för bortalaget (alla deras matcher)
+                    a_all = df[(df['response.teams.home.name'] == a_name) | (df['response.teams.away.name'] == a_name)]
+                    a_avg = (a_all['Gula kort Hemma'].where(a_all['response.teams.home.name'] == a_name, a_all['Gula Kort Borta'])).mean()
+                    
+                    if (np.nan_to_num(h_avg) + np.nan_to_num(a_avg)) > 3.4: 
+                        show_alert = True
 
                 c_i, c_b = st.columns([4.2, 1.8]) 
                 score_text = f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}" if mode=="Resultat" else "VS"
@@ -149,19 +156,18 @@ if df is not None:
                             st.rerun()
                     with col_bell:
                         if show_alert and mode == "Nästa matcher": st.markdown("<div class='bell-style'>🔔</div>", unsafe_allow_html=True)
-
+        
+        # ... Resten av tab-sektionerna (Laganalys, Domaranalys, Tabell) förblir exakt som förut ...
         with tab2:
             st.header("🛡️ Laganalys")
             f1, f2 = st.columns(2)
             all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
             sel_team = f1.selectbox("Välj lag:", all_teams)
             sel_year = f2.selectbox("Välj säsong (Lag):", year_options)
-            
             if sel_team:
                 t_df = df if sel_year == "Alla säsonger" else df[df['Säsong'] == int(sel_year)]
                 h_df = t_df[(t_df['response.teams.home.name'] == sel_team) & (t_df['response.fixture.status.short'] == 'FT')]
                 a_df = t_df[(t_df['response.teams.away.name'] == sel_team) & (t_df['response.fixture.status.short'] == 'FT')]
-                
                 t_m = len(h_df) + len(a_df)
                 if t_m > 0:
                     st.subheader(f"📊 Totalt snitt ({sel_year})")
@@ -171,7 +177,6 @@ if df is not None:
                     tc[2].metric("xG snitt", round((h_df['xG Hemma'].sum() + a_df['xG Borta'].sum())/t_m, 2))
                     tc[3].metric("Hörnor snitt", round((h_df['Hörnor Hemma'].sum() + a_df['Hörnor Borta'].sum())/t_m, 2))
                     tc[4].metric("Gula snitt", round((h_df['Gula kort Hemma'].sum() + a_df['Gula Kort Borta'].sum())/t_m, 2))
-                    
                     st.divider()
                     col_h, col_a = st.columns(2)
                     with col_h:
@@ -191,7 +196,6 @@ if df is not None:
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["0", "Okänd"]])
             sel_ref = d1.selectbox("Välj domare:", refs)
             sel_y_ref = d2.selectbox("Välj säsong (Domare):", year_options)
-            
             if sel_ref:
                 r_df = (df if sel_y_ref == "Alla säsonger" else df[df['Säsong'] == int(sel_y_ref)])[df['ref_clean'] == sel_ref]
                 if not r_df.empty:
@@ -201,7 +205,6 @@ if df is not None:
                     c[2].metric("Fouls/Match", round((r_df['Fouls Hemma'] + r_df['Fouls Borta']).mean(), 2))
                     straffar_total = r_df['Straffar Hemma'].sum() + r_df['Straffar Borta'].sum()
                     c[3].metric("Straffar", int(straffar_total))
-                    
                     st.markdown("**Senaste dömda matcher**")
                     r_display = r_df[['datetime', 'response.teams.home.name', 'response.teams.away.name', 'Gula kort Hemma', 'Gula Kort Borta']].copy()
                     r_display['datetime'] = r_display['datetime'].dt.strftime('%d %b %Y')
@@ -209,7 +212,6 @@ if df is not None:
                     st.dataframe(r_display, use_container_width=True, hide_index=True)
 
         with tab4:
-            if standings_df is not None: 
-                st.dataframe(standings_df, use_container_width=True, hide_index=True)
+            if standings_df is not None: st.dataframe(standings_df, use_container_width=True, hide_index=True)
 else:
     st.error("Kunde inte ladda data.")
