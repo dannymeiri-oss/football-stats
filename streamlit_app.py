@@ -153,19 +153,39 @@ if df is not None:
                     else:
                         st.button("H2H", key=f"btn_{index}", disabled=True)
 
-        # --- TAB 2: LAGSTATISTIK (HEMMA/BORTA ÅTERSTÄLLD) ---
+        # --- TAB 2: LAGSTATISTIK (TOTAL, HEMMA & BORTA) ---
         with tab2:
-            st.header("🛡️ Laganalys: Hemma & Borta")
+            st.header("🛡️ Laganalys")
             teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
             sel_team = st.selectbox("Välj lag:", teams)
             
             if sel_team:
+                # Filtrera data
                 h_df = df[(df['response.teams.home.name'] == sel_team) & (df['response.fixture.status.short'] == 'FT')]
                 a_df = df[(df['response.teams.away.name'] == sel_team) & (df['response.fixture.status.short'] == 'FT')]
                 
-                col1, col2 = st.columns(2)
+                # Beräkna total för metrics
+                total_matches = len(h_df) + len(a_df)
                 
-                with col1:
+                col_tot, col_h, col_a = st.columns(3)
+                
+                with col_tot:
+                    st.subheader("📊 Totalt")
+                    if total_matches > 0:
+                        avg_goals = (h_df['response.goals.home'].sum() + a_df['response.goals.away'].sum()) / total_matches
+                        avg_xg = (h_df['xG Hemma'].sum() + a_df['xG Borta'].sum()) / total_matches
+                        avg_corners = (h_df['Hörnor Hemma'].sum() + a_df['Hörnor Borta'].sum()) / total_matches
+                        avg_cards = (h_df['Gula kort Hemma'].sum() + a_df['Gula Kort Borta'].sum()) / total_matches
+                        
+                        st.metric("Matcher", total_matches)
+                        st.metric("Mål snitt", round(avg_goals, 2))
+                        st.metric("xG snitt", round(avg_xg, 2))
+                        st.metric("Hörnor snitt", round(avg_corners, 2))
+                        st.metric("Gula kort snitt", round(avg_cards, 2))
+                    else:
+                        st.write("Ingen data tillgänglig.")
+
+                with col_h:
                     st.subheader("🏠 Hemma")
                     if not h_df.empty:
                         st.metric("Matcher", len(h_df))
@@ -173,10 +193,11 @@ if df is not None:
                         st.metric("xG snitt", round(h_df['xG Hemma'].mean(), 2))
                         st.metric("Hörnor snitt", round(h_df['Hörnor Hemma'].mean(), 2))
                         st.metric("Gula kort snitt", round(h_df['Gula kort Hemma'].mean(), 2))
+                        st.metric("Bollinnehav", f"{int(h_df['Bollinnehav Hemma'].mean())}%")
                     else:
-                        st.write("Ingen hemma-data tillgänglig.")
-                
-                with col2:
+                        st.write("Ingen hemma-data.")
+
+                with col_a:
                     st.subheader("✈️ Borta")
                     if not a_df.empty:
                         st.metric("Matcher", len(a_df))
@@ -184,8 +205,9 @@ if df is not None:
                         st.metric("xG snitt", round(a_df['xG Borta'].mean(), 2))
                         st.metric("Hörnor snitt", round(a_df['Hörnor Borta'].mean(), 2))
                         st.metric("Gula kort snitt", round(a_df['Gula Kort Borta'].mean(), 2))
+                        st.metric("Bollinnehav", f"{int(a_df['Bollinnehav Borta'].mean())}%")
                     else:
-                        st.write("Ingen borta-data tillgänglig.")
+                        st.write("Ingen borta-data.")
 
         # --- TAB 3: DOMARANALYS ---
         with tab3:
@@ -206,7 +228,7 @@ if df is not None:
             if standings_df is not None and not standings_df.empty:
                 st.dataframe(standings_df, hide_index=True, use_container_width=True)
             else:
-                st.info("Tabellen uppdateras så fort API-kvoten nollställs inatt.")
+                st.info("Tabellen uppdateras automatiskt inatt.")
 
 else:
-    st.error("Kunde inte ladda 'Raw Data'. Kontrollera länk och publicering.")
+    st.error("Kunde inte ladda 'Raw Data'. Kontrollera länk.")
