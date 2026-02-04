@@ -13,7 +13,6 @@ def load_data():
         data.columns = [col.strip() for col in data.columns]
         data = data.dropna(subset=['response.fixture.id'])
         
-        # Alla kolumner som ska tvättas för beräkning
         cols_to_clean = [
             'response.goals.home', 'response.goals.away', 'xG Hemma', 'xG Borta',
             'Gula kort Hemma', 'Gula Kort Borta', 'Röda Kort Hemma', 'Röda Kort Borta',
@@ -41,6 +40,23 @@ df = load_data()
 if df is not None:
     tab1, tab2 = st.tabs(["⚽ Matcher", "🛡️ Djupgående Lagstatistik"])
 
+    # --- FLIK 1: ALLA MATCHER (Här är de kommande matcherna tillbaka!) ---
+    with tab1:
+        st.title("Matchlista")
+        # Vi sorterar så de nyaste/kommande hamnar överst eller underst beroende på vad du föredrar
+        # Här visar vi alla rader utan FT-filtret
+        display_df = df[[
+            'response.fixture.date', 
+            'response.teams.home.name', 
+            'response.teams.away.name', 
+            'response.fixture.status.short',
+            'response.goals.home',
+            'response.goals.away'
+        ]].copy()
+        
+        st.dataframe(display_df.sort_values('response.fixture.date', ascending=True), use_container_width=True)
+
+    # --- FLIK 2: DJUPGÅENDE LAGSTATISTIK (ORÖRD MEN SÄKRAD) ---
     with tab2:
         st.header("Laganalys & Medelvärden")
         
@@ -48,7 +64,6 @@ if df is not None:
         AWAY_COL = 'response.teams.away.name'
         SEASON_COL = 'response.league.season'
         
-        # Filter-sektion
         f1, f2, f3 = st.columns(3)
         with f1:
             all_teams = sorted(pd.concat([df[HOME_COL], df[AWAY_COL]]).unique())
@@ -60,16 +75,21 @@ if df is not None:
             num_matches = st.radio("Visa data för:", ["Samtliga matcher", "Senaste 20 matcher"], horizontal=True)
 
         if selected_team:
-            # Filtrering
-            base_df = df[((df[HOME_COL] == selected_team) | (df[AWAY_COL] == selected_team)) & (df['response.fixture.status.short'] == 'FT')].copy()
+            # Här filtrerar vi ENDAST för statistiken (måste vara färdigspelade matcher)
+            stats_base_df = df[
+                ((df[HOME_COL] == selected_team) | (df[AWAY_COL] == selected_team)) & 
+                (df['response.fixture.status.short'] == 'FT')
+            ].copy()
+            
             if selected_season != "Alla":
-                base_df = base_df[base_df[SEASON_COL] == selected_season]
-            base_df = base_df.sort_values('response.fixture.date', ascending=False)
+                stats_base_df = stats_base_df[stats_base_df[SEASON_COL] == selected_season]
+            
+            stats_base_df = stats_base_df.sort_values('response.fixture.date', ascending=False)
+            
             if num_matches == "Senaste 20 matcher":
-                base_df = base_df.head(20)
+                stats_base_df = stats_base_df.head(20)
 
-            if not base_df.empty:
-                # Funktion för att hämta statistiken
+            if not stats_base_df.empty:
                 def get_detailed_stats(target_df, team_name):
                     def map_row(row):
                         is_home = row[HOME_COL] == team_name
@@ -77,64 +97,48 @@ if df is not None:
                         g_key = "Gula kort Hemma" if is_home else "Gula Kort Borta"
                         return pd.Series({
                             'Mål': row['response.goals.home'] if is_home else row['response.goals.away'],
-                            'xG': row.get(f'xG{s}', 0),
-                            'Hörnor': row.get(f'Hörnor{s}', 0),
-                            'Gula': row.get(g_key, 0),
-                            'Bollinnehav': row.get(f'Bollinnehav{s}', 0),
-                            'Skott på mål': row.get(f'Skott på mål{s}', 0),
-                            'Total Skott': row.get(f'Total Skott{s}', 0),
-                            'Skott i Box': row.get(f'Skott i Box{s}', 0),
-                            'Fouls': row.get(f'Fouls{s}', 0),
+                            'xG': row.get(f'xG{s}', 0), 'Hörnor': row.get(f'Hörnor{s}', 0),
+                            'Gula': row.get(g_key, 0), 'Boll': row.get(f'Bollinnehav{s}', 0),
+                            'Skott på mål': row.get(f'Skott på mål{s}', 0), 'Total Skott': row.get(f'Total Skott{s}', 0),
+                            'Skott i Box': row.get(f'Skott i Box{s}', 0), 'Fouls': row.get(f'Fouls{s}', 0),
                             'Offside': row.get(f'Offside{s}', 0)
                         })
                     return target_df.apply(map_row, axis=1).mean().round(2)
 
-                # --- 1. TOTALSTATISTIK ---
-                avg_t = get_detailed_stats(base_df, selected_team)
-                st.subheader(f"Totalstatistik ({len(base_df)} matcher)")
+                avg_t = get_detailed_stats(stats_base_df, selected_team)
+
+                # Visning av Totalen
+                st.subheader(f"Totalstatistik ({len(stats_base_df)} matcher)")
                 c1, c2, c3, c4, c5 = st.columns(5)
-                c1.metric("Snitt Mål", avg_t['Mål'])
-                c2.metric("Snitt xG", avg_t['xG'])
-                c3.metric("Snitt Hörnor", avg_t['Hörnor'])
-                c4.metric("Snitt Boll", f"{avg_t['Bollinnehav']}%")
-                c5.metric("Snitt Gula", avg_t['Gula'])
+                c1.metric("Mål", avg_t['Mål']); c2.metric("xG", avg_t['xG']); c3.metric("Hörnor", avg_t['Hörnor'])
+                c4.metric("Boll", f"{avg_t['Boll']}%"); c5.metric("Gula", avg_t['Gula'])
 
+                # Jämförelse Hemma/Borta
                 st.divider()
-
-                # --- 2. HEMMA VS BORTA (Med Gjorda Mål tillagt) ---
-                st.subheader("Jämförelse: Hemma vs Borta")
                 h_col, a_col = st.columns(2)
-
+                
                 with h_col:
                     st.info("🏠 **HEMMA**")
-                    h_df = base_df[base_df[HOME_COL] == selected_team]
+                    h_df = stats_base_df[stats_base_df[HOME_COL] == selected_team]
                     if not h_df.empty:
                         avg_h = get_detailed_stats(h_df, selected_team)
                         st.write(f"Baserat på {len(h_df)} matcher")
-                        
                         m1, m2 = st.columns(2)
-                        m1.metric("Mål Hemma", avg_h['Mål']) # <--- NYTT
-                        m2.metric("xG Hemma", avg_h['xG'])
-                        
+                        m1.metric("Mål Hemma", avg_h['Mål']); m2.metric("xG Hemma", avg_h['xG'])
                         m3, m4 = st.columns(2)
-                        m3.metric("Hörnor Hemma", avg_h['Hörnor'])
-                        m4.metric("Bollinnehav Hemma", f"{avg_h['Bollinnehav']}%")
-                    else: st.write("Inga matcher")
+                        m3.metric("Hörnor Hemma", avg_h['Hörnor']); m4.metric("Boll Hemma", f"{avg_h['Boll']}%")
+                    else: st.write("Inga spelade hemmamatcher.")
 
                 with a_col:
                     st.success("✈️ **BORTA**")
-                    a_df = base_df[base_df[AWAY_COL] == selected_team]
+                    a_df = stats_base_df[stats_base_df[AWAY_COL] == selected_team]
                     if not a_df.empty:
                         avg_a = get_detailed_stats(a_df, selected_team)
                         st.write(f"Baserat på {len(a_df)} matcher")
-                        
                         m1, m2 = st.columns(2)
-                        m1.metric("Mål Borta", avg_a['Mål']) # <--- NYTT
-                        m2.metric("xG Borta", avg_a['xG'])
-                        
+                        m1.metric("Mål Borta", avg_a['Mål']); m2.metric("xG Borta", avg_a['xG'])
                         m3, m4 = st.columns(2)
-                        m3.metric("Hörnor Borta", avg_a['Hörnor'])
-                        m4.metric("Bollinnehav Borta", f"{avg_a['Bollinnehav']}%")
-                    else: st.write("Inga matcher")
-
-# Tab 1 förblir orörd som du ville
+                        m3.metric("Hörnor Borta", avg_a['Hörnor']); m4.metric("Boll Borta", f"{avg_a['Boll']}%")
+                    else: st.write("Inga spelade bortamatcher.")
+            else:
+                st.info("Ingen statistik tillgänglig för valda filter.")
