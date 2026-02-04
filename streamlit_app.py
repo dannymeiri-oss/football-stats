@@ -32,40 +32,40 @@ def get_sport_key_from_league_name(league_name):
     }
     return mapping.get(ln, "soccer_epl")
 
-# --- 3. ODDS-MOTOR (OPTIMERAD FÖR EXTRA ODDS) ---
+# --- 3. ODDS-MOTOR (MULTIPLE ENDPOINT STRATEGY) ---
 @st.cache_data(ttl=600)
-def fetch_odds_by_league(sport_key):
+def fetch_odds_robust(sport_key):
     if not ODDS_API_KEY: return None, "Ingen API-nyckel"
     
-    # Vi ber om ALLA marknader du vill ha
+    # Vi försöker hämta alla marknader i ett svep först
     markets = "h2h,totals,btts,double_chance,draw_no_bet"
     url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets={markets}&bookmakers=unibet"
     
     try:
         res = requests.get(url)
         if res.status_code == 200:
-            return res.json(), url
-        elif res.status_code == 422:
-            # Om extra-oddsen gör anropet för tungt, backar vi till bara 1X2 och mål
-            url_fallback = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h,totals&bookmakers=unibet"
-            res_fb = requests.get(url_fallback)
+            return res.json(), "OK - Alla marknader"
+        else:
+            # Om det skiter sig (422), hämta bara 1X2 som säkerhet
+            fallback_url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?apiKey={ODDS_API_KEY}&regions=eu&markets=h2h&bookmakers=unibet"
+            res_fb = requests.get(fallback_url)
             if res_fb.status_code == 200:
-                return res_fb.json(), "FALLBACK: Endast 1X2 & Ö/U pga belastning"
-        return f"Felkod: {res.status_code}", url
+                return res_fb.json(), f"FALLBACK - Endast 1X2 (Felkod {res.status_code})"
+        return None, f"API Error: {res.status_code}"
     except Exception as e:
-        return f"Fel: {str(e)}", url
+        return None, f"Error: {str(e)}"
 
 def get_match_odds_from_cache(home_sheet, away_sheet, all_odds):
     if not isinstance(all_odds, list): return None
     
     def clean(name):
         name = str(name).lower()
-        for r in ["fc", "afc", "town", "city", "united", "hotspur", "wanderers", "wolves", "spurs"]:
+        # Utökad rensning för bättre matchning (ref bild 5 i din prompt)
+        for r in ["fc", "afc", "town", "city", "united", "hotspur", "wanderers", "wolves", "spurs", "forest"]:
             name = name.replace(r, "")
         return "".join(filter(str.isalnum, name)).strip()
     
     h_s, a_s = clean(home_sheet), clean(away_sheet)
-    
     for match in all_odds:
         h_api, a_api = clean(match['home_team']), clean(match['away_team'])
         if (h_s in h_api or h_api in h_s) and (a_s in a_api or a_api in a_s):
@@ -132,7 +132,7 @@ if df is not None:
             st.rerun()
         m = st.session_state.view_h2h
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
-        st.markdown(f"<h1 style='text-align: center;'>Analys: {h_team} vs {a_team}</h1>", unsafe_allow_html=True)
+        st.markdown(f"<h1 style='text-align: center;'>H2H: {h_team} vs {a_team}</h1>", unsafe_allow_html=True)
         
         h_stats = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
         a_stats = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
@@ -148,7 +148,7 @@ if df is not None:
             
             st.markdown("<h4 style='text-align: center;'>💸 Marknadsodds (Unibet)</h4>", unsafe_allow_html=True)
             sk = get_sport_key_from_league_name(m.get('response.league.name', ''))
-            api_res, d_url = fetch_odds_by_league(sk)
+            api_res, status_msg = fetch_odds_robust(sk)
             odds = get_match_odds_from_cache(h_team, a_team, api_res)
             
             if odds:
@@ -173,17 +173,19 @@ if df is not None:
                         for o in odds['totals']:
                             if o.get('point') == 2.5: st.write(f"{o['name']}: **{o['price']}**")
             else:
-                st.info("Inga extra odds tillgängliga för tillfället.")
+                st.info("Inga odds matchades för denna match just nu.")
 
             st.divider()
+            st.markdown("<h4 style='text-align: center;'>📊 Detaljerad Lagjämförelse</h4>", unsafe_allow_html=True)
             stat_comparison_row("Mål", round(h_stats['response.goals.home'].mean(), 2), round(a_stats['response.goals.away'].mean(), 2))
             stat_comparison_row("xG", round(h_stats['xG Hemma'].mean(), 2), round(a_stats['xG Borta'].mean(), 2))
             stat_comparison_row("Hörnor", round(h_stats['Hörnor Hemma'].mean(), 1), round(a_stats['Hörnor Borta'].mean(), 1))
             stat_comparison_row("Gula Kort", round(h_stats['Gula kort Hemma'].mean(), 1), round(a_stats['Gula Kort Borta'].mean(), 1))
 
-            with st.expander("🛠️ Debut Console"):
-                st.write(f"Liga: {sk} | API Status: {api_res if isinstance(api_res, str) else 'OK'}")
-                st.write(f"URL: {d_url}")
+            with st.expander("🛠️ Debut Console: API-status"):
+                st.write(f"Liga: {sk} | Status: {status_msg}")
+                st.write(f"Matchning sökt: {h_team} vs {a_team}")
+                st.write(f"Antal matcher i API: {len(api_res) if isinstance(api_res, list) else 0}")
 
     # --- HUVUDMENY ---
     else:
