@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 
-# --- KONFIGURATION ---
-st.set_page_config(page_title="Deep Stats 2026", layout="wide")
+# --- 1. KONFIGURATION ---
+st.set_page_config(page_title="Fotbollsanalys 2026", layout="wide")
 
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw/export?format=csv&gid=0"
 
@@ -13,7 +13,6 @@ def load_data():
         data.columns = [col.strip() for col in data.columns]
         data = data.dropna(subset=['response.fixture.id'])
         
-        # Lista på ALLA kolumner som ska tvättas till siffror
         cols_to_clean = [
             'response.goals.home', 'response.goals.away', 'xG Hemma', 'xG Borta',
             'Gula kort Hemma', 'Gula Kort Borta', 'Röda Kort Hemma', 'Röda Kort Borta',
@@ -42,82 +41,68 @@ if df is not None:
     tab1, tab2 = st.tabs(["⚽ Matcher", "🛡️ Djupgående Lagstatistik"])
 
     with tab1:
-        st.dataframe(df[['response.fixture.date', 'response.teams.home.name', 'response.teams.away.name', 'response.fixture.status.short']].tail(10))
+        st.title("Matcher i Arket")
+        st.dataframe(df[['response.fixture.date', 'response.teams.home.name', 'response.teams.away.name', 'response.fixture.status.short']].tail(50))
 
+    # --- FLIK 2: UPPDATERAD MED FILTER FÖR SÄSONG OCH ANTAL MATCHER ---
     with tab2:
+        st.header("Laganalys & Medelvärden")
+        
         HOME_COL = 'response.teams.home.name'
         AWAY_COL = 'response.teams.away.name'
+        SEASON_COL = 'response.league.season'
         
-        all_teams = sorted(pd.concat([df[HOME_COL], df[AWAY_COL]]).unique())
-        selected_team = st.selectbox("Välj lag för djupanalys:", all_teams)
+        # 1. Rad med filter
+        f_col1, f_col2, f_col3 = st.columns(3)
+        
+        with f_col1:
+            all_teams = sorted(pd.concat([df[HOME_COL], df[AWAY_COL]]).unique())
+            selected_team = st.selectbox("Välj lag:", all_teams)
+            
+        with f_col2:
+            # Hämtar unika säsonger från arket
+            seasons = sorted(df[SEASON_COL].unique(), reverse=True)
+            selected_season = st.selectbox("Välj säsong:", ["Alla"] + list(seasons))
+            
+        with f_col3:
+            num_matches = st.radio("Visa data för:", ["Samtliga matcher", "Senaste 20 matcher"], horizontal=True)
 
         if selected_team:
+            # Filtrera fram lagets matcher (status FT)
             team_df = df[((df[HOME_COL] == selected_team) | (df[AWAY_COL] == selected_team)) & (df['response.fixture.status.short'] == 'FT')].copy()
 
+            # Applicera Säsongsfilter
+            if selected_season != "Alla":
+                team_df = team_df[team_df[SEASON_COL] == selected_season]
+
+            # Sortera efter datum (senaste först)
+            team_df = team_df.sort_values('response.fixture.date', ascending=False)
+
+            # Applicera filter för "Senaste 20"
+            if num_matches == "Senaste 20 matcher":
+                team_df = team_df.head(20)
+
             if not team_df.empty:
-                # Funktion för att mappa ALLA datapunkter
                 def get_all_stats(row):
                     is_home = row[HOME_COL] == selected_team
                     suffix = " Hemma" if is_home else " Borta"
-                    # Specialfall för vissa kolumner med udda stor bokstav (från din lista)
-                    gula_suffix = " Hemma" if is_home else " Borta"
-                    gula_key = f"Gula {'kort' if is_home else 'Kort'}{gula_suffix}"
+                    gula_key = "Gula kort Hemma" if is_home else "Gula Kort Borta"
                     
                     return pd.Series({
                         'Mål': row['response.goals.home'] if is_home else row['response.goals.away'],
-                        'xG': row[f'xG{suffix}'],
+                        'xG': row.get(f'xG{suffix}', 0),
                         'Gula': row.get(gula_key, 0),
-                        'Röda': row[f'Röda Kort{suffix}'],
-                        'Bollinnehav': row[f'Bollinnehav{suffix}'],
-                        'Hörnor': row[f'Hörnor{suffix}'],
-                        'Skott på mål': row[f'Skott på mål{suffix}'],
-                        'Total Skott': row[f'Total Skott{suffix}'],
-                        'Skott Utanför': row[f'Skott Utanför{suffix}'],
-                        'Blockerade Skott': row[f'Blockerade Skott{suffix}'],
-                        'Skott i Box': row[f'Skott i Box{suffix}'],
-                        'Skott utanför Box': row[f'Skott utanför Box{suffix}'],
-                        'Fouls': row[f'Fouls{suffix}'],
-                        'Passningar': row[f'Passningar{suffix}'],
-                        'Passningssäkerhet': row[f'Passningssäkerhet{suffix}'],
-                        'Offside': row[f'Offside{suffix}'],
-                        'Räddningar': row[f'Räddningar{suffix}']
-                    })
-
-                stats_df = team_df.apply(get_all_stats, axis=1)
-                avg = stats_df.mean().round(2)
-
-                # --- VISUALISERING ---
-                st.subheader(f"Genomsnitt per match ({len(team_df)} matcher)")
-                
-                # Övergripande
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Mål", avg['Mål'])
-                c2.metric("xG", avg['xG'])
-                c3.metric("Bollinnehav", f"{avg['Bollinnehav']}%")
-                c4.metric("Hörnor", avg['Hörnor'])
-
-                # Kategorier i expanders
-                with st.expander("🎯 Offensiv & Skott", expanded=True):
-                    col_a, col_b, col_c = st.columns(3)
-                    col_a.write(f"**Totala skott:** {avg['Total Skott']}")
-                    col_a.write(f"**Skott på mål:** {avg['Skott på mål']}")
-                    col_b.write(f"**Skott utanför:** {avg['Skott Utanför']}")
-                    col_b.write(f"**Blockerade skott:** {avg['Blockerade Skott']}")
-                    col_c.write(f"**Skott i box:** {avg['Skott i Box']}")
-                    col_c.write(f"**Skott utanför box:** {avg['Skott utanför Box']}")
-
-                with st.expander("🛡️ Försvar & Disciplin"):
-                    col_d, col_e = st.columns(2)
-                    col_d.write(f"**Gula kort:** {avg['Gula']}")
-                    col_d.write(f"**Röda kort:** {avg['Röda']}")
-                    col_d.write(f"**Fouls:** {avg['Fouls']}")
-                    col_e.write(f"**Räddningar:** {avg['Räddningar']}")
-                    col_e.write(f"**Offside:** {avg['Offside']}")
-
-                with st.expander("🔄 Passningsspel"):
-                    col_f, col_g = st.columns(2)
-                    col_f.write(f"**Antal passningar:** {avg['Passningar']}")
-                    col_g.write(f"**Passningssäkerhet:** {avg['Passningssäkerhet']}%")
-
-            else:
-                st.info("Ingen statistik tillgänglig för detta lag.")
+                        'Röda': row.get(f'Röda Kort{suffix}', 0),
+                        'Bollinnehav': row.get(f'Bollinnehav{suffix}', 0),
+                        'Hörnor': row.get(f'Hörnor{suffix}', 0),
+                        'Skott på mål': row.get(f'Skott på mål{suffix}', 0),
+                        'Total Skott': row.get(f'Total Skott{suffix}', 0),
+                        'Skott Utanför': row.get(f'Skott Utanför{suffix}', 0),
+                        'Blockerade Skott': row.get(f'Blockerade Skott{suffix}', 0),
+                        'Skott i Box': row.get(f'Skott i Box{suffix}', 0),
+                        'Skott utanför Box': row.get(f'Skott utanför Box{suffix}', 0),
+                        'Fouls': row.get(f'Fouls{suffix}', 0),
+                        'Passningar': row.get(f'Passningar{suffix}', 0),
+                        'Passningssäkerhet': row.get(f'Passningssäkerhet{suffix}', 0),
+                        'Offside': row.get(f'Offside{suffix}', 0),
+                        'Räddningar': row.get(f'Räddningar{
