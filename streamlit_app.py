@@ -18,7 +18,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-title'>Perfekt Layout - Kortanalys Aktiv</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-title'>Perfekt Layout - Avancerad Fotbollsanalys</p>", unsafe_allow_html=True)
 
 API_KEY = "6343cd4636523af501b585a1b595ad26" 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
@@ -126,10 +126,9 @@ if df is not None:
                 
                 show_alert = False
                 if mode == "Nästa matcher":
-                    # --- NY LOGIK: GULA KORT ISTÄLLET FÖR MÅL ---
-                    h_card_avg = df[df['response.teams.home.name'] == h_name]['Gula kort Hemma'].mean()
-                    a_card_avg = df[df['response.teams.away.name'] == a_name]['Gula Kort Borta'].mean()
-                    if (np.nan_to_num(h_card_avg) + np.nan_to_num(a_card_avg)) > 3.4: show_alert = True
+                    h_avg = df[df['response.teams.home.name'] == h_name]['response.goals.home'].mean()
+                    a_avg = df[df['response.teams.away.name'] == a_name]['response.goals.away'].mean()
+                    if (np.nan_to_num(h_avg) + np.nan_to_num(a_avg)) > 3.4: show_alert = True
 
                 c_i, c_b = st.columns([4.2, 1.8]) 
                 score_text = f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}" if mode=="Resultat" else "VS"
