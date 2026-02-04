@@ -1,54 +1,84 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import traceback
 
-# 1. Grundinställningar - Görs direkt
+# 1. Grundinställningar
 st.set_page_config(page_title="Football Stats Pro", layout="wide")
 
-# 2. CSS - Laddas in en gång
+# 2. CSS för den snygga mallen
 st.markdown("""
     <style>
-    .score-big { font-size: 30px; font-weight: 900; color: #ff4b4b; text-align: center; margin: 0; }
-    .vs-text { text-align: center; color: #888; font-size: 14px; }
-    .league-name { color: #666; font-size: 12px; font-weight: bold; }
-    .date-badge { background: #f0f2f6; padding: 2px 8px; border-radius: 4px; color: #333; font-size: 12px; }
-    .match-card { padding: 15px; border-bottom: 1px solid #eee; }
+    /* Bakgrund och kort */
+    .main { background-color: #f8f9fa; }
+    .stat-card {
+        background-color: white;
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+    }
+    /* Mall-rader för statistik */
+    .stat-row {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+    .stat-val-box {
+        flex: 1;
+        text-align: center;
+        padding: 8px;
+        background: #ffffff;
+        border: 1px solid #eee;
+        font-weight: bold;
+        font-size: 16px;
+        border-radius: 5px;
+    }
+    .stat-label {
+        flex: 2;
+        text-align: center;
+        background: #4e54f3; /* Den blå färgen från din bild */
+        color: white;
+        padding: 8px;
+        margin: 0 10px;
+        font-weight: bold;
+        text-transform: uppercase;
+        font-size: 12px;
+        border-radius: 5px;
+        letter-spacing: 1px;
+    }
+    .score-display {
+        font-size: 48px;
+        font-weight: 900;
+        text-align: center;
+        color: #1a1a1a;
+        margin: 10px 0;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRYB9eRz1kLOPX8YewpfSh5KuZQQ8AoKsfkxSmNutW5adKPMFN1AvLGq3FSVw7ZXwqMYZJVkFIPIO-g/pub?gid=0&single=true&output=csv"
 
-# OPTIMERING: Cacha hela den färdiga DataFrame:n
-@st.cache_data(ttl=300) # Sparar i 5 minuter
-def get_clean_data():
-    try:
-        df = pd.read_csv(CSV_URL)
-        df.columns = df.columns.str.strip()
-        
-        if 'response.fixture.date' in df.columns:
-            # Gör tunga datum-beräkningar här inne (bara en gång per 5 min)
-            df['dt_object'] = pd.to_datetime(df['response.fixture.date'], errors='coerce').dt.tz_localize(None)
-            df['visnings_datum'] = df['dt_object'].dt.strftime('%d %b %Y')
-            df['visnings_tid'] = df['dt_object'].dt.strftime('%H:%M')
-        
-        now = datetime.now()
-        goal_col = 'response.goals.home'
-        if goal_col in df.columns:
-            goals_numeric = pd.to_numeric(df[goal_col], errors='coerce')
-            df['spelad'] = (goals_numeric.notna()) | (df['dt_object'] < now)
-        else:
-            df['spelad'] = False
-        return df
-    except Exception as e:
-        return pd.DataFrame({"error": [str(e)]})
+@st.cache_data(ttl=60)
+def load_data():
+    df = pd.read_csv(CSV_URL)
+    df.columns = df.columns.str.strip()
+    return df
+
+# Funktion för att rita en rad i mallen
+def draw_stat_item(label, h_val, a_val, is_percent=False):
+    h_str = f"{h_val}%" if is_percent else f"{h_val}"
+    a_str = f"{a_val}%" if is_percent else f"{a_val}"
+    
+    st.markdown(f"""
+        <div class="stat-row">
+            <div class="stat-val-box">{h_str}</div>
+            <div class="stat-label">{label}</div>
+            <div class="stat-val-box">{a_str}</div>
+        </div>
+    """, unsafe_allow_html=True)
 
 try:
-    df_raw = get_clean_data()
-
-    if 'error' in df_raw.columns:
-        st.error(f"Datafel: {df_raw['error'].iat[0]}")
-        st.stop()
+    df = load_data()
 
     if 'page' not in st.session_state:
         st.session_state.page = 'list'
@@ -57,73 +87,102 @@ try:
     if st.session_state.page == 'list':
         st.title("🏆 Matchcenter")
         
-        with st.sidebar:
-            st.header("Filter")
-            sida = st.radio("Kategori:", ["Kommande", "Historik"])
-            search = st.text_input("Sök lag...")
-
-        # Snabb filtrering
-        df_view = df_raw[df_raw['spelad'] == (sida == "Historik")].copy()
+        mode = st.sidebar.radio("Visa:", ["Kommande", "Historik"])
+        search = st.sidebar.text_input("Sök lag...")
         
-        if search:
-            mask = df_view['response.teams.home.name'].str.contains(search, case=False, na=False) | \
-                   df_view['response.teams.away.name'].str.contains(search, case=False, na=False)
-            df_view = df_view[mask]
-
-        if not df_view.empty:
-            df_view = df_view.sort_values(by='dt_object', ascending=(sida == "Kommande"))
-            
-            # Visa bara de första 50 matcherna för att öka hastigheten vid scroll
-            for i, row in df_view.head(50).iterrows():
-                with st.container():
-                    col1, col2, col3, col4, col5 = st.columns([0.5, 3, 2, 3, 1])
-                    
-                    with col1:
-                        if pd.notna(row.get('response.league.logo')):
-                            st.image(row['response.league.logo'], width=30)
-                    with col2:
-                        st.write(f"**{row.get('response.teams.home.name','')}**")
-                        st.markdown(f"<span class='league-name'>{row.get('response.league.name','')}</span>", unsafe_allow_html=True)
-                    with col3:
-                        h_g = row.get('response.goals.home')
-                        if pd.notna(h_g) and str(h_g).strip() != "":
-                            st.markdown(f"<div class='score-big'>{int(float(h_g))} - {int(float(row['response.goals.away']))}</div>", unsafe_allow_html=True)
-                        else:
-                            st.markdown(f"<div class='vs-text'>VS<br>{row.get('visnings_tid','--:--')}</div>", unsafe_allow_html=True)
-                    with col4:
-                        st.write(f"**{row.get('response.teams.away.name','')}**")
-                        st.markdown(f"<span class='date-badge'>{row.get('visnings_datum','')}</span>", unsafe_allow_html=True)
-                    with col5:
-                        if st.button("Analys", key=f"btn_{i}"):
-                            st.session_state.selected_match = row.to_dict()
-                            st.session_state.page = 'details'
-                            st.rerun()
-                    st.divider()
+        # Filtrering baserat på målkolumn (finns mål = historik)
+        if mode == "Historik":
+            display_df = df[df['response.goals.home'].notna()].sort_index(ascending=False)
         else:
-            st.info("Inga matcher hittades.")
+            display_df = df[df['response.goals.home'].isna()]
 
-    # --- SIDA 2: ANALYSVY ---
+        if search:
+            display_df = display_df[display_df['response.teams.home.name'].str.contains(search, case=False, na=False) | 
+                                    display_df['response.teams.away.name'].str.contains(search, case=False, na=False)]
+
+        for i, row in display_df.head(30).iterrows():
+            with st.container():
+                c1, c2, c3, c4 = st.columns([1, 4, 2, 1.5])
+                with c1:
+                    if pd.notna(row.get('response.league.logo')):
+                        st.image(row['response.league.logo'], width=35)
+                with c2:
+                    st.markdown(f"**{row['response.teams.home.name']} - {row['response.teams.away.name']}**")
+                    st.caption(f"{row.get('response.league.name', '')}")
+                with c3:
+                    if mode == "Historik":
+                        st.markdown(f"**{int(row['response.goals.home'])} - {int(row['response.goals.away'])}**")
+                    else:
+                        st.write(str(row.get('response.fixture.date', ''))[11:16])
+                with c4:
+                    if st.button("Analys", key=f"btn_{i}"):
+                        st.session_state.selected_match = row
+                        st.session_state.page = 'details'
+                        st.rerun()
+                st.divider()
+
+    # --- SIDA 2: ANALYSVY (DIN TEMPLATE) ---
     elif st.session_state.page == 'details':
         m = st.session_state.selected_match
-        if st.button("← Tillbaka"):
+        
+        if st.button("⬅ Tillbaka"):
             st.session_state.page = 'list'
             st.rerun()
-            
-        st.divider()
-        # Header, H2H osv (samma som förut men mer effektiv inläsning)
-        # ... [Resten av analyskoden är densamma]
-        st.write(f"### {m['response.teams.home.name']} vs {m['response.teams.away.name']}")
-        
-        tab1, tab2 = st.tabs(["📊 Statistik", "🔄 Inbördes"])
-        with tab2:
-            # Snabb H2H-sökning i redan cachad data
-            t1, t2 = m['response.teams.home.name'], m['response.teams.away.name']
-            h2h = df_raw[(df_raw['spelad'] == True) & (
-                ((df_raw['response.teams.home.name'] == t1) & (df_raw['response.teams.away.name'] == t2)) |
-                ((df_raw['response.teams.home.name'] == t2) & (df_raw['response.teams.away.name'] == t1))
-            )].sort_values(by='dt_object', ascending=False)
-            st.dataframe(h2h[['visnings_datum', 'response.teams.home.name', 'response.teams.away.name', 'response.goals.home', 'response.goals.away']])
 
-except Exception:
-    st.error("Ett fel uppstod.")
-    st.text(traceback.format_exc())
+        # HEADER
+        st.markdown('<div class="stat-card">', unsafe_allow_html=True)
+        h_logo, h_name = m.get('response.teams.home.logo',''), m.get('response.teams.home.name','')
+        a_logo, a_name = m.get('response.teams.away.logo',''), m.get('response.teams.away.name','')
+        
+        header_col1, header_col2, header_col3 = st.columns([2, 2, 2])
+        with header_col1:
+            st.image(h_logo, width=80)
+            st.subheader(h_name)
+        with header_col2:
+            h_g = m.get('response.goals.home')
+            if pd.notna(h_g):
+                st.markdown(f"<div class='score-display'>{int(h_g)} - {int(m['response.goals.away'])}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown("<div class='score-display'>VS</div>", unsafe_allow_html=True)
+            st.caption(f"<p style='text-align:center'>{m.get('response.league.name','')}</p>", unsafe_allow_html=True)
+        with header_col3:
+            st.image(a_logo, width=80)
+            st.subheader(a_name)
+        
+        st.divider()
+
+        # STATISTIK-MALLEN (Här mappar vi dina kolumner AV till CA)
+        # Vi använder .get() och sätter 0 som default om data saknas
+        st.markdown("### Matchstatistik")
+        
+        # Rad 1: Bollinnehav
+        draw_stat_item("Bollinnehav", m.get('Ball Possession_H', 0), m.get('Ball Possession_B', 0), is_percent=True)
+        
+        # Rad 2: Skott på mål
+        draw_stat_item("Skott på mål", m.get('Shots on Goal_H', 0), m.get('Shots on Goal_B', 0))
+        
+        # Rad 3: Totalt antal skott
+        draw_stat_item("Totala skott", m.get('Total Shots_H', 0), m.get('Total Shots_B', 0))
+        
+        # Rad 4: Hörnor
+        draw_stat_item("Hörnor", m.get('Corners_H', 0), m.get('Corners_B', 0))
+        
+        # Rad 5: Gula kort
+        draw_stat_item("Gula kort", m.get('Yellow Cards_H', 0), m.get('Yellow Cards_B', 0))
+
+        # Rad 6: Expected Goals (xG) - Den viktigaste!
+        draw_stat_item("Expected Goals (xG)", m.get('expected_goals_H', 0), m.get('expected_goals_B', 0))
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Tabbar för extra info
+        t1, t2 = st.tabs(["H2H", "Info"])
+        with t1:
+            st.write("Tidigare möten visas här...")
+        with t2:
+            st.write(f"Arena: {m.get('response.fixture.venue.name','N/A')}")
+            st.write(f"Domare: {m.get('response.fixture.referee','N/A')}")
+
+except Exception as e:
+    st.error("Kunde inte ladda matchcenter just nu.")
+    st.write(e)
