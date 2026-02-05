@@ -45,7 +45,6 @@ def load_data(url):
 def clean_stats(data):
     if data is None: return None
     
-    # Säkra datetime
     if 'response.fixture.date' in data.columns:
         data['datetime'] = pd.to_datetime(data['response.fixture.date'], errors='coerce')
     else:
@@ -54,7 +53,6 @@ def clean_stats(data):
     if 'Säsong' not in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
-    # Kolumner som behövs
     needed_cols = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
         'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta', 
@@ -96,7 +94,7 @@ if df is not None:
         m = st.session_state.selected_match
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
         
-        # 1. HEADER (Lika för båda vyer)
+        # HEADER (Resultat i vitt)
         st.markdown(f"""
             <div style="background-color: #0e1117; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px; border: 1px solid #333;">
                 <div style="color: #ffcc00; font-weight: bold; letter-spacing: 2px; font-size: 1.2rem;">FULL TIME</div>
@@ -118,11 +116,9 @@ if df is not None:
             </div>
         """, unsafe_allow_html=True)
 
-        # 2. MATCH STATISTICS (OM ANALYS-KNAPP)
         if st.session_state.view_mode == "match_detail":
             st.markdown("<h2 style='text-align:center; color:#ddd; margin-bottom:20px;'>MATCH STATISTICS</h2>", unsafe_allow_html=True)
             
-            # Vi bygger raderna direkt utan extra funktioner för att säkra renderingen
             stats_to_show = [
                 ("Ball Possession", 'Bollinnehav Hemma', 'Bollinnehav Borta', True),
                 ("Shot on Target", 'Skott på mål Hemma', 'Skott på mål Borta', False),
@@ -140,42 +136,30 @@ if df is not None:
                 a_val = int(m[a_col]) if "xG" not in label else m[a_col]
                 suffix = "%" if is_pct else ""
                 
+                # Datapunkter färgade SVARTA (color: black)
                 st.markdown(f"""
                     <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;">
-                        <div style="width: 80px; text-align: right; font-size: 1.4rem; font-weight: bold; color: white; padding-right: 15px;">{h_val}{suffix}</div>
+                        <div style="width: 80px; text-align: right; font-size: 1.4rem; font-weight: bold; color: black; padding-right: 15px;">{h_val}{suffix}</div>
                         <div style="width: 220px; background: #e63946; color: white; text-align: center; padding: 6px; font-weight: bold; font-size: 0.85rem; border-radius: 2px; text-transform: uppercase;">{label}</div>
-                        <div style="width: 80px; text-align: left; font-size: 1.4rem; font-weight: bold; color: white; padding-left: 15px;">{a_val}{suffix}</div>
+                        <div style="width: 80px; text-align: left; font-size: 1.4rem; font-weight: bold; color: black; padding-left: 15px;">{a_val}{suffix}</div>
                     </div>
                 """, unsafe_allow_html=True)
 
-        # 3. H2H STATS (OM H2H-KNAPP)
         else:
             h_hist = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
             a_hist = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
-
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Mål snitt", round(h_hist['response.goals.home'].mean() + a_hist['response.goals.away'].mean(), 2) if not h_hist.empty else 0)
             m2.metric("xG snitt", round(h_hist['xG Hemma'].mean() + a_hist['xG Borta'].mean(), 2) if not h_hist.empty else 0)
             m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else 0)
             m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else 0)
-
             st.write("---")
             stat_comparison_row("MÅL/MATCH", round(h_hist['response.goals.home'].mean(), 2) if not h_hist.empty else 0, round(a_hist['response.goals.away'].mean(), 2) if not a_hist.empty else 0)
             stat_comparison_row("XG/MATCH", round(h_hist['xG Hemma'].mean(), 2) if not h_hist.empty else 0, round(a_hist['xG Borta'].mean(), 2) if not a_hist.empty else 0)
             stat_comparison_row("BOLLINNEHAV", int(h_hist['Bollinnehav Hemma'].mean()) if not h_hist.empty else 0, int(a_hist['Bollinnehav Borta'].mean()) if not a_hist.empty else 0, True)
 
-            st.markdown("### ⚔️ Senaste inbördes möten")
-            h2h = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
-                     ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
-            h2h = h2h[h2h['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
-            if not h2h.empty:
-                h2h_display = h2h.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
-                st.dataframe(h2h_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
-
     else:
-        # HUVUDMENY (MATCHCENTER)
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell"])
-        
         with tab1:
             mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="mc_mode")
             subset = df[df['response.fixture.status.short'] == ('NS' if mode == "Nästa matcher" else 'FT')]
@@ -202,7 +186,6 @@ if df is not None:
             all_seasons = sorted(df['Säsong'].unique(), reverse=True)
             with f1: sel_team = st.selectbox("Välj lag:", all_teams)
             with f2: sel_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons)
-            
             if sel_team:
                 team_df = df if sel_season == "Alla" else df[df['Säsong'] == sel_season]
                 h_df = team_df[(team_df['response.teams.home.name'] == sel_team) & (team_df['response.fixture.status.short'] == 'FT')]
