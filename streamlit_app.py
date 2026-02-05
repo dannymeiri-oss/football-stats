@@ -54,7 +54,7 @@ def clean_stats(data):
     if 'Säsong' not in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
-    # Alla nödvändiga kolumner - nu inkluderat 'Röda kort' ordentligt
+    # Definiera alla kolumner som behövs för kalkyleringar
     needed_cols = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
         'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta', 
@@ -132,7 +132,7 @@ if df is not None:
         
         # --- TAB 1: MATCHCENTER ---
         with tab1:
-            mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="center_mode")
+            mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="matchcenter_mode_radio")
             subset = df[df['response.fixture.status.short'] == ('NS' if mode == "Nästa matcher" else 'FT')]
             for idx, r in subset.sort_values('datetime', ascending=(mode=="Nästa matcher")).head(30).iterrows():
                 col_info, col_btn = st.columns([4.5, 1.5])
@@ -145,7 +145,7 @@ if df is not None:
                             <div style="flex:1; text-align:left; font-weight:bold;"><img src="{r['response.teams.away.logo']}" width="20"> {r['response.teams.away.name']}</div>
                         </div>""", unsafe_allow_html=True)
                 with col_btn:
-                    if st.button("H2H" if mode == "Nästa matcher" else "Analys", key=f"btn_match_{idx}", use_container_width=True):
+                    if st.button("H2H" if mode == "Nästa matcher" else "Analys", key=f"btn_m_{idx}", use_container_width=True):
                         st.session_state.selected_match = r
                         st.session_state.view_mode = "h2h_detail" if mode == "Nästa matcher" else "match_detail"
                         st.rerun()
@@ -156,8 +156,8 @@ if df is not None:
             f1, f2 = st.columns(2)
             all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
             all_seasons = sorted(df['Säsong'].unique(), reverse=True)
-            with f1: sel_team = st.selectbox("Välj lag:", all_teams, key="team_analysis_selectbox")
-            with f2: sel_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="season_analysis_selectbox")
+            with f1: sel_team = st.selectbox("Välj lag:", all_teams, key="team_sel_box")
+            with f2: sel_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="season_sel_box")
             
             if sel_team:
                 team_df = df if sel_season == "Alla" else df[df['Säsong'] == sel_season]
@@ -232,8 +232,8 @@ if df is not None:
             st.header("⚖️ Domaranalys")
             rf1, rf2 = st.columns(2)
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["0", "Okänd", "nan"]])
-            with rf1: sel_ref = st.selectbox("Välj domare:", ["Välj domare..."] + refs, key="ref_selectbox")
-            with rf2: sel_ref_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="ref_season_selectbox")
+            with rf1: sel_ref = st.selectbox("Välj domare:", ["Välj domare..."] + refs, key="ref_analysis_selectbox")
+            with rf2: sel_ref_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="ref_season_analysis_selectbox")
             
             if sel_ref != "Välj domare...":
                 ref_df = df if sel_ref_season == "Alla" else df[df['Säsong'] == sel_ref_season]
@@ -252,6 +252,7 @@ if df is not None:
                     
                     st.divider()
                     st.subheader("Senaste dömda matcher")
+                    # Här fixar vi tabellheaders och ser till att sorteringen använder rätt kolumn
                     r_df_display = r_df.rename(columns={
                         'response.teams.home.name': 'Hemmalag',
                         'response.teams.away.name': 'Bortalag',
@@ -262,7 +263,7 @@ if df is not None:
                     })
                     st.dataframe(
                         r_df_display[['Speltid', 'Hemmalag', 'Bortalag', 'Gula H', 'Gula B', 'Straff H', 'Straff B']]
-                        .sort_values('datetime', ascending=False),
+                        .sort_values('Speltid', ascending=False), # Sorterar på Speltid för att undvika KeyError
                         use_container_width=True, hide_index=True
                     )
 
