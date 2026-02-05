@@ -44,11 +44,17 @@ def load_data(url):
 
 def clean_stats(data):
     if data is None: return None
+    
+    # Säkra datetime
     if 'response.fixture.date' in data.columns:
         data['datetime'] = pd.to_datetime(data['response.fixture.date'], errors='coerce')
-    if 'Säsong' not in data.columns and 'datetime' in data.columns:
+    else:
+        data['datetime'] = pd.Timestamp.now()
+        
+    if 'Säsong' not in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
+    # Alla nödvändiga kolumner - nu inkluderat 'Röda kort' ordentligt
     needed_cols = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
         'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta', 
@@ -58,9 +64,12 @@ def clean_stats(data):
         'Räddningar Hemma', 'Räddningar Borta', 'Offside Hemma', 'Offside Borta',
         'response.goals.home', 'response.goals.away'
     ]
+    
     for col in needed_cols:
-        if col not in data.columns: data[col] = 0.0
-        data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
+        if col not in data.columns: 
+            data[col] = 0.0
+        else:
+            data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
     
     data['ref_clean'] = data.get('response.fixture.referee', "Okänd").fillna("Okänd").apply(lambda x: str(x).split(',')[0].strip())
     
@@ -82,7 +91,9 @@ def stat_comparison_row(label, val1, val2, is_pct=False):
 # --- 3. LAYOUT ---
 if df is not None:
     if st.session_state.view_mode in ["match_detail", "h2h_detail"]:
-        if st.button("← Tillbaka"): st.session_state.view_mode = "main"; st.rerun()
+        if st.button("← Tillbaka"): 
+            st.session_state.view_mode = "main"
+            st.rerun()
         
         m = st.session_state.selected_match
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
@@ -121,7 +132,7 @@ if df is not None:
         
         # --- TAB 1: MATCHCENTER ---
         with tab1:
-            mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True)
+            mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="center_mode")
             subset = df[df['response.fixture.status.short'] == ('NS' if mode == "Nästa matcher" else 'FT')]
             for idx, r in subset.sort_values('datetime', ascending=(mode=="Nästa matcher")).head(30).iterrows():
                 col_info, col_btn = st.columns([4.5, 1.5])
@@ -134,9 +145,10 @@ if df is not None:
                             <div style="flex:1; text-align:left; font-weight:bold;"><img src="{r['response.teams.away.logo']}" width="20"> {r['response.teams.away.name']}</div>
                         </div>""", unsafe_allow_html=True)
                 with col_btn:
-                    if st.button("H2H" if mode == "Nästa matcher" else "Analys", key=f"m{idx}", use_container_width=True):
+                    if st.button("H2H" if mode == "Nästa matcher" else "Analys", key=f"btn_match_{idx}", use_container_width=True):
                         st.session_state.selected_match = r
-                        st.session_state.view_mode = "h2h_detail" if mode == "Nästa matcher" else "match_detail"; st.rerun()
+                        st.session_state.view_mode = "h2h_detail" if mode == "Nästa matcher" else "match_detail"
+                        st.rerun()
 
         # --- TAB 2: LAGANALYS ---
         with tab2:
@@ -144,8 +156,8 @@ if df is not None:
             f1, f2 = st.columns(2)
             all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
             all_seasons = sorted(df['Säsong'].unique(), reverse=True)
-            with f1: sel_team = st.selectbox("Välj lag:", all_teams, key="team_analysis_sel")
-            with f2: sel_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="season_analysis_sel")
+            with f1: sel_team = st.selectbox("Välj lag:", all_teams, key="team_analysis_selectbox")
+            with f2: sel_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="season_analysis_selectbox")
             
             if sel_team:
                 team_df = df if sel_season == "Alla" else df[df['Säsong'] == sel_season]
@@ -200,7 +212,6 @@ if df is not None:
                             c2.metric("Räddningar", round(a_df['Räddningar Borta'].mean(), 1))
                             c1.metric("Offside", round(a_df['Offside Borta'].mean(), 1))
                     
-                    # --- NY SEKTION: SENASTE 10 MATCHER (TOTALT) ---
                     st.divider()
                     st.subheader(f"📅 Senaste 10 matcher för {sel_team}")
                     last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | 
@@ -221,8 +232,8 @@ if df is not None:
             st.header("⚖️ Domaranalys")
             rf1, rf2 = st.columns(2)
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["0", "Okänd", "nan"]])
-            with rf1: sel_ref = st.selectbox("Välj domare:", ["Välj domare..."] + refs, key="ref_analysis_sel")
-            with rf2: sel_ref_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="ref_season_sel")
+            with rf1: sel_ref = st.selectbox("Välj domare:", ["Välj domare..."] + refs, key="ref_selectbox")
+            with rf2: sel_ref_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="ref_season_selectbox")
             
             if sel_ref != "Välj domare...":
                 ref_df = df if sel_ref_season == "Alla" else df[df['Säsong'] == sel_ref_season]
@@ -257,6 +268,7 @@ if df is not None:
 
         # --- TAB 4: TABELL ---
         with tab4:
-            if standings_df is not None: st.dataframe(standings_df, use_container_width=True, hide_index=True)
+            if standings_df is not None: 
+                st.dataframe(standings_df, use_container_width=True, hide_index=True)
 else:
     st.error("Kunde inte ladda data.")
