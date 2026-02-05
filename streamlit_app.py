@@ -31,7 +31,7 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-title'>Perfect Layout - Season Filters Restored</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-title'>Perfect Layout - Filters Reordered</p>", unsafe_allow_html=True)
 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
@@ -51,7 +51,6 @@ def clean_stats(data):
     if 'response.fixture.date' in data.columns:
         data['datetime'] = pd.to_datetime(data['response.fixture.date'], errors='coerce')
     
-    # Skapa Säsongs-kolumn om den inte finns (baserat på datum)
     if 'Säsong' not in data.columns and 'datetime' in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
@@ -143,10 +142,10 @@ if df is not None:
         with tab2:
             st.header("🛡️ Laganalys")
             f1, f2 = st.columns(2)
-            all_seasons = sorted(df['Säsong'].unique(), reverse=True)
-            with f1: sel_season = st.selectbox("Välj säsong (Lag):", ["Alla"] + all_seasons)
             all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
-            with f2: sel_team = st.selectbox("Välj lag:", all_teams)
+            all_seasons = sorted(df['Säsong'].unique(), reverse=True)
+            with f1: sel_team = st.selectbox("Välj lag:", all_teams)
+            with f2: sel_season = st.selectbox("Välj säsong (Lag):", ["Alla"] + all_seasons)
             
             if sel_team:
                 team_df = df if sel_season == "Alla" else df[df['Säsong'] == sel_season]
@@ -175,9 +174,10 @@ if df is not None:
         with tab3:
             st.header("⚖️ Domaranalys")
             f1, f2 = st.columns(2)
-            with f1: sel_season_ref = st.selectbox("Välj säsong (Domare):", ["Alla"] + all_seasons)
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["0", "Okänd"]])
-            with f2: sel_ref = st.selectbox("Välj domare:", refs)
+            all_seasons = sorted(df['Säsong'].unique(), reverse=True)
+            with f1: sel_ref = st.selectbox("Välj domare:", refs)
+            with f2: sel_season_ref = st.selectbox("Välj säsong (Domare):", ["Alla"] + all_seasons)
             
             if sel_ref:
                 ref_df = df if sel_season_ref == "Alla" else df[df['Säsong'] == sel_season_ref]
