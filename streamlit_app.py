@@ -28,7 +28,6 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-title'>Domarstatistik Återställd</p>", unsafe_allow_html=True)
 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
@@ -64,6 +63,9 @@ def clean_stats(data):
         data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
     
     data['ref_clean'] = data.get('response.fixture.referee', "Okänd").fillna("Okänd").apply(lambda x: str(x).split(',')[0].strip())
+    
+    # Skapa formaterad datumsträng för visning
+    data['Speltid'] = data['datetime'].dt.strftime('%d %b %Y')
     return data
 
 df = clean_stats(load_data(RAW_DATA_URL))
@@ -72,11 +74,48 @@ standings_df = load_data(STANDINGS_URL)
 if 'view_mode' not in st.session_state: st.session_state.view_mode = "main"
 if 'selected_match' not in st.session_state: st.session_state.selected_match = None
 
+def stat_comparison_row(label, val1, val2, is_pct=False):
+    st.markdown(f"<div class='stat-label-centered'>{label}</div>", unsafe_allow_html=True)
+    suffix = "%" if is_pct else ""
+    st.markdown(f"<div class='stat-comparison'><div style='flex:1; text-align:right;'>{val1}{suffix}</div><div style='color:#eee;'>|</div><div style='flex:1; text-align:left;'>{val2}{suffix}</div></div>", unsafe_allow_html=True)
+
 # --- 3. LAYOUT ---
 if df is not None:
     if st.session_state.view_mode in ["match_detail", "h2h_detail"]:
         if st.button("← Tillbaka"): st.session_state.view_mode = "main"; st.rerun()
-        # (H2H Innehåll bevaras här)
+        
+        m = st.session_state.selected_match
+        h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
+        
+        st.markdown(f"""<div class='centered-header'><img src='{m['response.teams.home.logo']}' class='h2h-logo'><h1 style='margin:0;'>{h_team} vs {a_team}</h1><img src='{m['response.teams.away.logo']}' class='h2h-logo'></div>""", unsafe_allow_html=True)
+
+        h_hist = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
+        a_hist = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Mål snitt", round(h_hist['response.goals.home'].mean() + a_hist['response.goals.away'].mean(), 2) if not h_hist.empty else 0)
+        m2.metric("xG snitt", round(h_hist['xG Hemma'].mean() + a_hist['xG Borta'].mean(), 2) if not h_hist.empty else 0)
+        m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else 0)
+        m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else 0)
+
+        st.write("---")
+        stat_comparison_row("MÅL/MATCH", round(h_hist['response.goals.home'].mean(), 2) if not h_hist.empty else 0, round(a_hist['response.goals.away'].mean(), 2) if not a_hist.empty else 0)
+        stat_comparison_row("XG/MATCH", round(h_hist['xG Hemma'].mean(), 2) if not h_hist.empty else 0, round(a_hist['xG Borta'].mean(), 2) if not a_hist.empty else 0)
+        stat_comparison_row("BOLLINNEHAV", int(h_hist['Bollinnehav Hemma'].mean()) if not h_hist.empty else 0, int(a_hist['Bollinnehav Borta'].mean()) if not a_hist.empty else 0, True)
+
+        st.markdown("### ⚔️ Senaste inbördes möten")
+        h2h = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
+                 ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
+        h2h = h2h[h2h['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
+        if not h2h.empty:
+            h2h_display = h2h.rename(columns={
+                'response.teams.home.name': 'Hemmalag',
+                'response.teams.away.name': 'Bortalag',
+                'response.goals.home': 'Mål H',
+                'response.goals.away': 'Mål B'
+            })
+            st.dataframe(h2h_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
+
     else:
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell"])
         
@@ -89,7 +128,7 @@ if df is not None:
                 with col_info:
                     score = "VS" if mode == "Nästa matcher" else f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}"
                     st.markdown(f"""<div class="match-row">
-                            <div style="width:130px; font-size:0.8em; color:gray;">{r['datetime'].strftime('%d %b %Y %H:%M')}</div>
+                            <div style="width:130px; font-size:0.8em; color:gray;">{r['Speltid']}</div>
                             <div style="flex:1; text-align:right; font-weight:bold;">{r['response.teams.home.name']} <img src="{r['response.teams.home.logo']}" width="20"></div>
                             <div style="background:#222; color:white; padding:2px 10px; margin:0 10px; border-radius:4px; min-width:50px; text-align:center;">{score}</div>
                             <div style="flex:1; text-align:left; font-weight:bold;"><img src="{r['response.teams.away.logo']}" width="20"> {r['response.teams.away.name']}</div>
@@ -99,7 +138,7 @@ if df is not None:
                         st.session_state.selected_match = r
                         st.session_state.view_mode = "h2h_detail" if mode == "Nästa matcher" else "match_detail"; st.rerun()
 
-        # --- TAB 2: LAGANALYS (PERFEKT LAYOUT) ---
+        # --- TAB 2: LAGANALYS ---
         with tab2:
             st.header("🛡️ Laganalys")
             f1, f2 = st.columns(2)
@@ -161,11 +200,10 @@ if df is not None:
                             c2.metric("Räddningar", round(a_df['Räddningar Borta'].mean(), 1))
                             c1.metric("Offside", round(a_df['Offside Borta'].mean(), 1))
 
-        # --- TAB 3: DOMARANALYS (NY UPPDATERING) ---
+        # --- TAB 3: DOMARANALYS ---
         with tab3:
             st.header("⚖️ Domaranalys")
             rf1, rf2 = st.columns(2)
-            # Filtrera bort domare utan namn
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["0", "Okänd", "nan"]])
             with rf1: sel_ref = st.selectbox("Välj domare:", ["Välj domare..."] + refs, key="ref_analysis_sel")
             with rf2: sel_ref_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="ref_season_sel")
@@ -176,8 +214,6 @@ if df is not None:
                 
                 if not r_df.empty:
                     st.markdown(f"<div class='section-header'>Statistik för {sel_ref}</div>", unsafe_allow_html=True)
-                    
-                    # Beräkningar
                     m_count = len(r_df)
                     gula_tot = r_df['Gula kort Hemma'].sum() + r_df['Gula Kort Borta'].sum()
                     straff_tot = r_df['Straffar Hemma'].sum() + r_df['Straffar Borta'].sum()
@@ -185,20 +221,23 @@ if df is not None:
                     d1, d2, d3 = st.columns(3)
                     d1.metric("Antal Matcher", m_count)
                     d2.metric("Gula Kort (Snitt)", round(gula_tot / m_count, 2) if m_count > 0 else "N/A")
-                    
-                    # Straff-logik: Visa N/A om det inte finns data (t.ex. om alla är 0 eller saknas)
-                    straff_display = int(straff_tot) if straff_tot >= 0 else "N/A"
-                    d3.metric("Antal Straffar", straff_display)
+                    d3.metric("Antal Straffar", int(straff_tot) if straff_tot >= 0 else "N/A")
                     
                     st.divider()
                     st.subheader("Senaste dömda matcher")
+                    r_df_display = r_df.rename(columns={
+                        'response.teams.home.name': 'Hemmalag',
+                        'response.teams.away.name': 'Bortalag',
+                        'Gula kort Hemma': 'Gula H',
+                        'Gula Kort Borta': 'Gula B',
+                        'Straffar Hemma': 'Straff H',
+                        'Straffar Borta': 'Straff B'
+                    })
                     st.dataframe(
-                        r_df[['datetime', 'response.teams.home.name', 'response.teams.away.name', 'Gula kort Hemma', 'Gula Kort Borta', 'Straffar Hemma', 'Straffar Borta']]
-                        .sort_values('datetime', ascending=False),
+                        r_df_display[['Speltid', 'Hemmalag', 'Bortalag', 'Gula H', 'Gula B', 'Straff H', 'Straff B']]
+                        .sort_values('Speltid', ascending=False),
                         use_container_width=True, hide_index=True
                     )
-                else:
-                    st.info(f"Ingen data hittades för {sel_ref} under säsongen {sel_ref_season}.")
 
         # --- TAB 4: TABELL ---
         with tab4:
