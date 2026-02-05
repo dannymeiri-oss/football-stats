@@ -16,18 +16,17 @@ st.markdown("""
     .match-row { background: white; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 5px; display: flex; align-items: center; }
     
     /* H2H SPECIFIK DESIGN */
-    .centered-header { display: flex; justify-content: center; align-items: center; gap: 30px; margin-bottom: 30px; width: 100%; }
+    .centered-header { display: flex; justify-content: center; align-items: center; gap: 30px; margin-bottom: 20px; width: 100%; }
     .h2h-logo { width: 100px; }
-    
-    /* ODDS BOX */
-    .odds-box { background: #fdfdfd; padding: 15px; border-radius: 10px; border: 1px dashed #bbb; text-align: center; margin: 20px auto; max-width: 600px; }
+    .stat-label-centered { color: #888; font-weight: bold; font-size: 0.75rem; text-transform: uppercase; text-align: center; margin-top: 10px; }
+    .stat-comparison { display: flex; justify-content: center; align-items: center; gap: 20px; font-size: 1.4rem; font-weight: bold; }
     
     .bell-style { font-size: 1.3rem; display: flex; align-items: center; justify-content: center; height: 100%; }
     </style>
     """, unsafe_allow_html=True)
 
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
-st.markdown("<p class='sub-title'>Perfect Layout - All 32 Datapoints Restored</p>", unsafe_allow_html=True)
+st.markdown("<p class='sub-title'>Fixed: Duplicate Keys & All Datapoints Restored</p>", unsafe_allow_html=True)
 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
@@ -59,12 +58,10 @@ def clean_stats(data):
         'Räddningar Hemma', 'Räddningar Borta', 'Offside Hemma', 'Offside Borta',
         'response.goals.home', 'response.goals.away'
     ]
-    
     for col in numeric_cols:
         if col in data.columns:
             data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
-        else: data[col] = 0.0
-            
+    
     data['ref_clean'] = data.get('response.fixture.referee', "Okänd").fillna("Okänd").apply(lambda x: str(x).split(',')[0].strip())
     return data
 
@@ -73,6 +70,11 @@ standings_df = load_data(STANDINGS_URL)
 
 if 'view_mode' not in st.session_state: st.session_state.view_mode = "main"
 if 'selected_match' not in st.session_state: st.session_state.selected_match = None
+
+def stat_comparison_row(label, val1, val2, is_pct=False):
+    st.markdown(f"<div class='stat-label-centered'>{label}</div>", unsafe_allow_html=True)
+    suffix = "%" if is_pct else ""
+    st.markdown(f"<div class='stat-comparison'><div style='flex:1; text-align:right;'>{val1}{suffix}</div><div style='color:#eee;'>|</div><div style='flex:1; text-align:left;'>{val2}{suffix}</div></div>", unsafe_allow_html=True)
 
 # --- 3. LAYOUT ---
 if df is not None:
@@ -89,7 +91,27 @@ if df is not None:
                 <img src='{m['response.teams.away.logo']}' class='h2h-logo'>
             </div>
         """, unsafe_allow_html=True)
-        # (Här kan H2H-innehåll läggas till om det önskas, men behåller enkelheten nu)
+
+        h_hist = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
+        a_hist = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Mål snitt", round(h_hist['response.goals.home'].mean() + a_hist['response.goals.away'].mean(), 2) if not h_hist.empty else 0)
+        m2.metric("xG snitt", round(h_hist['xG Hemma'].mean() + a_hist['xG Borta'].mean(), 2) if not h_hist.empty else 0)
+        m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else 0)
+        m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else 0)
+
+        st.write("---")
+        stat_comparison_row("MÅL/MATCH", round(h_hist['response.goals.home'].mean(), 2) if not h_hist.empty else 0, round(a_hist['response.goals.away'].mean(), 2) if not a_hist.empty else 0)
+        stat_comparison_row("XG/MATCH", round(h_hist['xG Hemma'].mean(), 2) if not h_hist.empty else 0, round(a_hist['xG Borta'].mean(), 2) if not a_hist.empty else 0)
+        stat_comparison_row("BOLLINNEHAV", int(h_hist['Bollinnehav Hemma'].mean()) if not h_hist.empty else 0, int(a_hist['Bollinnehav Borta'].mean()) if not a_hist.empty else 0, True)
+
+        st.markdown("### ⚔️ Senaste inbördes möten")
+        h2h = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
+                 ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
+        h2h = h2h[h2h['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
+        if not h2h.empty:
+            st.dataframe(h2h[['datetime', 'response.teams.home.name', 'response.goals.home', 'response.goals.away', 'response.teams.away.name']], use_container_width=True, hide_index=True)
 
     else:
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell"])
@@ -117,8 +139,8 @@ if df is not None:
             f1, f2 = st.columns(2)
             all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
             all_seasons = sorted(df['Säsong'].unique(), reverse=True)
-            with f1: sel_team = st.selectbox("Välj lag:", all_teams)
-            with f2: sel_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons)
+            with f1: sel_team = st.selectbox("Välj lag:", all_teams, key="team_sel")
+            with f2: sel_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="season_team_sel")
             
             if sel_team:
                 team_df = df if sel_season == "Alla" else df[df['Säsong'] == sel_season]
@@ -128,7 +150,6 @@ if df is not None:
                 if not h_df.empty or not a_df.empty:
                     st.divider()
                     col_h, col_a = st.columns(2)
-                    
                     with col_h:
                         st.subheader("🏠 HEMMA")
                         c1, c2 = st.columns(2)
@@ -167,8 +188,8 @@ if df is not None:
             st.header("⚖️ Domaranalys")
             f1, f2 = st.columns(2)
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["0", "Okänd"]])
-            with f1: sel_ref = st.selectbox("Välj domare:", refs)
-            with f2: sel_season_ref = st.selectbox("Välj säsong:", ["Alla"] + all_seasons)
+            with f1: sel_ref = st.selectbox("Välj domare:", refs, key="ref_sel")
+            with f2: sel_season_ref = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="season_ref_sel")
             
             if sel_ref:
                 ref_df = df if sel_season_ref == "Alla" else df[df['Säsong'] == sel_season_ref]
