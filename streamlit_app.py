@@ -54,7 +54,7 @@ def clean_stats(data):
     if 'Säsong' not in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
-    # Definiera alla kolumner som behövs
+    # Kolumner som behövs
     needed_cols = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
         'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta', 
@@ -96,7 +96,7 @@ if df is not None:
         m = st.session_state.selected_match
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
         
-        # Header (FULL TIME + Resultat)
+        # 1. HEADER (Lika för båda vyer)
         st.markdown(f"""
             <div style="background-color: #0e1117; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px; border: 1px solid #333;">
                 <div style="color: #ffcc00; font-weight: bold; letter-spacing: 2px; font-size: 1.2rem;">FULL TIME</div>
@@ -118,32 +118,37 @@ if df is not None:
             </div>
         """, unsafe_allow_html=True)
 
-        # OM ANALYS (Enbart matchstatistik)
+        # 2. MATCH STATISTICS (OM ANALYS-KNAPP)
         if st.session_state.view_mode == "match_detail":
             st.markdown("<h2 style='text-align:center; color:#ddd; margin-bottom:20px;'>MATCH STATISTICS</h2>", unsafe_allow_html=True)
             
-            def draw_stat_row(label, home_val, away_val, is_pct=False):
+            # Vi bygger raderna direkt utan extra funktioner för att säkra renderingen
+            stats_to_show = [
+                ("Ball Possession", 'Bollinnehav Hemma', 'Bollinnehav Borta', True),
+                ("Shot on Target", 'Skott på mål Hemma', 'Skott på mål Borta', False),
+                ("Expected Goals (xG)", 'xG Hemma', 'xG Borta', False),
+                ("Pass Accuracy", 'Passningssäkerhet Hemma', 'Passningssäkerhet Borta', True),
+                ("Offside", 'Offside Hemma', 'Offside Borta', False),
+                ("Corner Kicks", 'Hörnor Hemma', 'Hörnor Borta', False),
+                ("Fouls", 'Fouls Hemma', 'Fouls Borta', False),
+                ("Yellow Cards", 'Gula kort Hemma', 'Gula Kort Borta', False),
+                ("Red Cards", 'Röda kort Hemma', 'Röda kort Borta', False)
+            ]
+
+            for label, h_col, a_col, is_pct in stats_to_show:
+                h_val = int(m[h_col]) if "xG" not in label else m[h_col]
+                a_val = int(m[a_col]) if "xG" not in label else m[a_col]
                 suffix = "%" if is_pct else ""
+                
                 st.markdown(f"""
                     <div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;">
-                        <div style="width: 80px; text-align: right; font-size: 1.4rem; font-weight: bold; color: white; padding-right: 15px;">{home_val}{suffix}</div>
+                        <div style="width: 80px; text-align: right; font-size: 1.4rem; font-weight: bold; color: white; padding-right: 15px;">{h_val}{suffix}</div>
                         <div style="width: 220px; background: #e63946; color: white; text-align: center; padding: 6px; font-weight: bold; font-size: 0.85rem; border-radius: 2px; text-transform: uppercase;">{label}</div>
-                        <div style="width: 80px; text-align: left; font-size: 1.4rem; font-weight: bold; color: white; padding-left: 15px;">{away_val}{suffix}</div>
+                        <div style="width: 80px; text-align: left; font-size: 1.4rem; font-weight: bold; color: white; padding-left: 15px;">{a_val}{suffix}</div>
                     </div>
                 """, unsafe_allow_html=True)
 
-            # DIREKT DATA FRÅN MATCHEN (m) - INGA SNITT
-            draw_stat_row("Ball Possession", int(m['Bollinnehav Hemma']), int(m['Bollinnehav Borta']), True)
-            draw_stat_row("Shot on Target", int(m['Skott på mål Hemma']), int(m['Skott på mål Borta']))
-            draw_stat_row("Expected Goals (xG)", m['xG Hemma'], m['xG Borta'])
-            draw_stat_row("Pass Accuracy", int(m['Passningssäkerhet Hemma']), int(m['Passningssäkerhet Borta']), True)
-            draw_stat_row("Offside", int(m['Offside Hemma']), int(m['Offside Borta']))
-            draw_stat_row("Corner Kicks", int(m['Hörnor Hemma']), int(m['Hörnor Borta']))
-            draw_stat_row("Fouls", int(m['Fouls Hemma']), int(m['Fouls Borta']))
-            draw_stat_row("Yellow Cards", int(m['Gula kort Hemma']), int(m['Gula Kort Borta']))
-            draw_stat_row("Red Cards", int(m['Röda kort Hemma']), int(m['Röda kort Borta']))
-
-        # OM H2H (Historik-snitt)
+        # 3. H2H STATS (OM H2H-KNAPP)
         else:
             h_hist = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
             a_hist = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
@@ -168,10 +173,11 @@ if df is not None:
                 st.dataframe(h2h_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
 
     else:
+        # HUVUDMENY (MATCHCENTER)
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell"])
         
         with tab1:
-            mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="matchcenter_mode_radio")
+            mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="mc_mode")
             subset = df[df['response.fixture.status.short'] == ('NS' if mode == "Nästa matcher" else 'FT')]
             for idx, r in subset.sort_values('datetime', ascending=(mode=="Nästa matcher")).head(30).iterrows():
                 col_info, col_btn = st.columns([4.5, 1.5])
@@ -194,15 +200,14 @@ if df is not None:
             f1, f2 = st.columns(2)
             all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
             all_seasons = sorted(df['Säsong'].unique(), reverse=True)
-            with f1: sel_team = st.selectbox("Välj lag:", all_teams, key="team_sel_box")
-            with f2: sel_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="season_sel_box")
+            with f1: sel_team = st.selectbox("Välj lag:", all_teams)
+            with f2: sel_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons)
             
             if sel_team:
                 team_df = df if sel_season == "Alla" else df[df['Säsong'] == sel_season]
                 h_df = team_df[(team_df['response.teams.home.name'] == sel_team) & (team_df['response.fixture.status.short'] == 'FT')]
                 a_df = team_df[(team_df['response.teams.away.name'] == sel_team) & (team_df['response.fixture.status.short'] == 'FT')]
                 tot_m = len(h_df) + len(a_df)
-
                 if tot_m > 0:
                     st.markdown("<div class='total-header'>TOTAL PRESTATION (SNITT)</div>", unsafe_allow_html=True)
                     t1, t2, t3, t4, t5, t6 = st.columns(6)
@@ -213,57 +218,12 @@ if df is not None:
                     t5.metric("Gula Kort", round((h_df['Gula kort Hemma'].sum() + a_df['Gula Kort Borta'].sum())/tot_m, 1))
                     t6.metric("Bollinnehav", f"{int((h_df['Bollinnehav Hemma'].sum() + a_df['Bollinnehav Borta'].sum())/tot_m)}%")
 
-                    col_h, col_a = st.columns(2)
-                    with col_h:
-                        st.markdown("<div class='section-header'>🏠 Hemma</div>", unsafe_allow_html=True)
-                        if not h_df.empty:
-                            c1, c2 = st.columns(2)
-                            c1.metric("Mål", round(h_df['response.goals.home'].mean(), 2))
-                            c2.metric("xG", round(h_df['xG Hemma'].mean(), 2))
-                            c1.metric("Bollinnehav", f"{int(h_df['Bollinnehav Hemma'].mean())}%")
-                            c2.metric("Hörnor", round(h_df['Hörnor Hemma'].mean(), 1))
-                            c1.metric("Gula Kort", round(h_df['Gula kort Hemma'].mean(), 1))
-                            c2.metric("Röda Kort", round(h_df['Röda kort Hemma'].mean(), 2))
-                            c1.metric("Fouls", round(h_df['Fouls Hemma'].mean(), 1))
-                            c2.metric("Straffar (Tot)", int(h_df['Straffar Hemma'].sum()))
-                            c1.metric("Skott på mål", round(h_df['Skott på mål Hemma'].mean(), 1))
-                            c2.metric("Skott totalt", round(h_df['Skott totalt Hemma'].mean(), 1))
-                            c1.metric("Passnings%", f"{int(h_df['Passningssäkerhet Hemma'].mean())}%")
-                            c2.metric("Räddningar", round(h_df['Räddningar Hemma'].mean(), 1))
-                            c1.metric("Offside", round(h_df['Offside Hemma'].mean(), 1))
-
-                    with col_a:
-                        st.markdown("<div class='section-header'>✈️ Borta</div>", unsafe_allow_html=True)
-                        if not a_df.empty:
-                            c1, c2 = st.columns(2)
-                            c1.metric("Mål", round(a_df['response.goals.away'].mean(), 2))
-                            c2.metric("xG", round(a_df['xG Borta'].mean(), 2))
-                            c1.metric("Bollinnehav", f"{int(a_df['Bollinnehav Borta'].mean())}%")
-                            c2.metric("Hörnor", round(a_df['Hörnor Borta'].mean(), 1))
-                            c1.metric("Gula Kort", round(a_df['Gula Kort Borta'].mean(), 1))
-                            c2.metric("Röda Kort", round(a_df['Röda kort Borta'].mean(), 2))
-                            c1.metric("Fouls", round(a_df['Fouls Borta'].mean(), 1))
-                            c2.metric("Straffar (Tot)", int(a_df['Straffar Borta'].sum()))
-                            c1.metric("Skott på mål", round(a_df['Skott på mål Borta'].mean(), 1))
-                            c2.metric("Skott totalt", round(a_df['Skott totalt Borta'].mean(), 1))
-                            c1.metric("Passnings%", f"{int(a_df['Passningssäkerhet Borta'].mean())}%")
-                            c2.metric("Räddningar", round(a_df['Räddningar Borta'].mean(), 1))
-                            c1.metric("Offside", round(a_df['Offside Borta'].mean(), 1))
-                    
-                    st.divider()
-                    st.subheader(f"📅 Senaste 10 matcher för {sel_team}")
-                    last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | (team_df['response.teams.away.name'] == sel_team)) & (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
-                    if not last_10.empty:
-                        l10_display = last_10.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
-                        st.dataframe(l10_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
-
         with tab3:
             st.header("⚖️ Domaranalys")
             rf1, rf2 = st.columns(2)
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["0", "Okänd", "nan"]])
-            with rf1: sel_ref = st.selectbox("Välj domare:", ["Välj domare..."] + refs, key="ref_analysis_selectbox")
-            with rf2: sel_ref_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="ref_season_analysis_selectbox")
-            
+            with rf1: sel_ref = st.selectbox("Välj domare:", ["Välj domare..."] + refs)
+            with rf2: sel_ref_season = st.selectbox("Välj säsong för domare:", ["Alla"] + all_seasons)
             if sel_ref != "Välj domare...":
                 ref_df = df if sel_ref_season == "Alla" else df[df['Säsong'] == sel_ref_season]
                 r_df = ref_df[ref_df['ref_clean'] == sel_ref]
@@ -274,12 +234,8 @@ if df is not None:
                     straff_tot = r_df['Straffar Hemma'].sum() + r_df['Straffar Borta'].sum()
                     d1, d2, d3 = st.columns(3)
                     d1.metric("Antal Matcher", m_count)
-                    d2.metric("Gula Kort (Snitt)", round(gula_tot / m_count, 2) if m_count > 0 else "N/A")
-                    d3.metric("Antal Straffar", int(straff_tot) if straff_tot >= 0 else "N/A")
-                    st.divider()
-                    st.subheader("Senaste dömda matcher")
-                    r_df_display = r_df.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'Gula kort Hemma': 'Gula H', 'Gula Kort Borta': 'Gula B', 'Straffar Hemma': 'Straff H', 'Straffar Borta': 'Straff B'})
-                    st.dataframe(r_df_display[['Speltid', 'Hemmalag', 'Bortalag', 'Gula H', 'Gula B', 'Straff H', 'Straff B']].sort_values('datetime', ascending=False), use_container_width=True, hide_index=True)
+                    d2.metric("Gula Kort (Snitt)", round(gula_tot / m_count, 2) if m_count > 0 else 0)
+                    d3.metric("Antal Straffar", int(straff_tot))
 
         with tab4:
             if standings_df is not None: 
