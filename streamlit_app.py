@@ -54,7 +54,7 @@ def clean_stats(data):
     if 'Säsong' not in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
-    # Definiera alla kolumner som behövs för kalkyleringar
+    # Definiera alla kolumner som behövs
     needed_cols = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
         'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta', 
@@ -72,8 +72,6 @@ def clean_stats(data):
             data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
     
     data['ref_clean'] = data.get('response.fixture.referee', "Okänd").fillna("Okänd").apply(lambda x: str(x).split(',')[0].strip())
-    
-    # Skapa formaterad datumsträng för visning
     data['Speltid'] = data['datetime'].dt.strftime('%d %b %Y')
     return data
 
@@ -98,7 +96,7 @@ if df is not None:
         m = st.session_state.selected_match
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
         
-        # Header med loggor och resultat enligt den nya grafiska designen
+        # Header (FULL TIME + Resultat)
         st.markdown(f"""
             <div style="background-color: #0e1117; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px; border: 1px solid #333;">
                 <div style="color: #ffcc00; font-weight: bold; letter-spacing: 2px; font-size: 1.2rem;">FULL TIME</div>
@@ -120,7 +118,7 @@ if df is not None:
             </div>
         """, unsafe_allow_html=True)
 
-        # OM LÄGET ÄR "ANALYS" (Från Resultat-sidan)
+        # OM ANALYS (Enbart matchstatistik)
         if st.session_state.view_mode == "match_detail":
             st.markdown("<h2 style='text-align:center; color:#ddd; margin-bottom:20px;'>MATCH STATISTICS</h2>", unsafe_allow_html=True)
             
@@ -134,6 +132,7 @@ if df is not None:
                     </div>
                 """, unsafe_allow_html=True)
 
+            # DIREKT DATA FRÅN MATCHEN (m) - INGA SNITT
             draw_stat_row("Ball Possession", int(m['Bollinnehav Hemma']), int(m['Bollinnehav Borta']), True)
             draw_stat_row("Shot on Target", int(m['Skott på mål Hemma']), int(m['Skott på mål Borta']))
             draw_stat_row("Expected Goals (xG)", m['xG Hemma'], m['xG Borta'])
@@ -144,7 +143,7 @@ if df is not None:
             draw_stat_row("Yellow Cards", int(m['Gula kort Hemma']), int(m['Gula Kort Borta']))
             draw_stat_row("Red Cards", int(m['Röda kort Hemma']), int(m['Röda kort Borta']))
 
-        # OM LÄGET ÄR "H2H" (Från Nästa matcher)
+        # OM H2H (Historik-snitt)
         else:
             h_hist = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
             a_hist = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
@@ -165,18 +164,12 @@ if df is not None:
                      ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
             h2h = h2h[h2h['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
             if not h2h.empty:
-                h2h_display = h2h.rename(columns={
-                    'response.teams.home.name': 'Hemmalag',
-                    'response.teams.away.name': 'Bortalag',
-                    'response.goals.home': 'Mål H',
-                    'response.goals.away': 'Mål B'
-                })
+                h2h_display = h2h.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
                 st.dataframe(h2h_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
 
     else:
         tab1, tab2, tab3, tab4 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell"])
         
-        # --- TAB 1: MATCHCENTER ---
         with tab1:
             mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="matchcenter_mode_radio")
             subset = df[df['response.fixture.status.short'] == ('NS' if mode == "Nästa matcher" else 'FT')]
@@ -196,7 +189,6 @@ if df is not None:
                         st.session_state.view_mode = "h2h_detail" if mode == "Nästa matcher" else "match_detail"
                         st.rerun()
 
-        # --- TAB 2: LAGANALYS ---
         with tab2:
             st.header("🛡️ Laganalys")
             f1, f2 = st.columns(2)
@@ -260,20 +252,11 @@ if df is not None:
                     
                     st.divider()
                     st.subheader(f"📅 Senaste 10 matcher för {sel_team}")
-                    last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | 
-                                      (team_df['response.teams.away.name'] == sel_team)) & 
-                                     (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
-                    
+                    last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | (team_df['response.teams.away.name'] == sel_team)) & (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                     if not last_10.empty:
-                        l10_display = last_10.rename(columns={
-                            'response.teams.home.name': 'Hemmalag',
-                            'response.teams.away.name': 'Bortalag',
-                            'response.goals.home': 'Mål H',
-                            'response.goals.away': 'Mål B'
-                        })
+                        l10_display = last_10.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
                         st.dataframe(l10_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
 
-        # --- TAB 3: DOMARANALYS ---
         with tab3:
             st.header("⚖️ Domaranalys")
             rf1, rf2 = st.columns(2)
@@ -284,35 +267,20 @@ if df is not None:
             if sel_ref != "Välj domare...":
                 ref_df = df if sel_ref_season == "Alla" else df[df['Säsong'] == sel_ref_season]
                 r_df = ref_df[ref_df['ref_clean'] == sel_ref]
-                
                 if not r_df.empty:
                     st.markdown(f"<div class='section-header'>Statistik för {sel_ref}</div>", unsafe_allow_html=True)
                     m_count = len(r_df)
                     gula_tot = r_df['Gula kort Hemma'].sum() + r_df['Gula Kort Borta'].sum()
                     straff_tot = r_df['Straffar Hemma'].sum() + r_df['Straffar Borta'].sum()
-                    
                     d1, d2, d3 = st.columns(3)
                     d1.metric("Antal Matcher", m_count)
                     d2.metric("Gula Kort (Snitt)", round(gula_tot / m_count, 2) if m_count > 0 else "N/A")
                     d3.metric("Antal Straffar", int(straff_tot) if straff_tot >= 0 else "N/A")
-                    
                     st.divider()
                     st.subheader("Senaste dömda matcher")
-                    r_df_display = r_df.rename(columns={
-                        'response.teams.home.name': 'Hemmalag',
-                        'response.teams.away.name': 'Bortalag',
-                        'Gula kort Hemma': 'Gula H',
-                        'Gula Kort Borta': 'Gula B',
-                        'Straffar Hemma': 'Straff H',
-                        'Straffar Borta': 'Straff B'
-                    })
-                    st.dataframe(
-                        r_df_display[['Speltid', 'Hemmalag', 'Bortalag', 'Gula H', 'Gula B', 'Straff H', 'Straff B']]
-                        .sort_values('datetime', ascending=False),
-                        use_container_width=True, hide_index=True
-                    )
+                    r_df_display = r_df.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'Gula kort Hemma': 'Gula H', 'Gula Kort Borta': 'Gula B', 'Straffar Hemma': 'Straff H', 'Straffar Borta': 'Straff B'})
+                    st.dataframe(r_df_display[['Speltid', 'Hemmalag', 'Bortalag', 'Gula H', 'Gula B', 'Straff H', 'Straff B']].sort_values('datetime', ascending=False), use_container_width=True, hide_index=True)
 
-        # --- TAB 4: TABELL ---
         with tab4:
             if standings_df is not None: 
                 st.dataframe(standings_df, use_container_width=True, hide_index=True)
