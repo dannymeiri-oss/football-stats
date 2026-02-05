@@ -220,7 +220,7 @@ if df is not None:
 
         with tab5:
             st.header("📊 Topplista")
-            top_cat = st.radio("Välj kategori:", ["Lag", "Domare"], horizontal=True)
+            top_cat = st.radio("Välj kategori:", ["Lag", "Domare", "Heta Kortmatcher (Kommande)"], horizontal=True)
             
             c1, c2 = st.columns(2)
             with c1: num_matches = st.slider("Antal senaste matcher (Kriterium):", 1, 20, 5)
@@ -233,35 +233,72 @@ if df is not None:
                 filtered_df = filtered_df[filtered_df['response.league.name'] == sel_league]
 
             if top_cat == "Lag":
-                st.info(f"Visar lag som har spelat minst **{num_matches}** matcher i valda ligan.")
+                st.info(f"Visar lag med minst **{num_matches}** spelade matcher.")
                 team_stats = []
                 teams = sorted(pd.concat([filtered_df['response.teams.home.name'], filtered_df['response.teams.away.name']]).unique())
                 for t in teams:
                     t_matches = filtered_df[(filtered_df['response.teams.home.name'] == t) | (filtered_df['response.teams.away.name'] == t)].sort_values('datetime', ascending=False)
-                    # KRITERIUM: Måste ha minst X matcher totalt i filterade datasetet
                     if len(t_matches) >= num_matches:
                         recent = t_matches.head(num_matches)
                         cards = [row['Gula kort Hemma'] if row['response.teams.home.name'] == t else row['Gula Kort Borta'] for _, row in recent.iterrows()]
-                        team_stats.append({'Lag': t, 'Snitt Kort': round(sum(cards)/len(cards), 2), 'Matcher i urval': len(cards)})
+                        team_stats.append({'Lag': t, 'Snitt Kort': round(sum(cards)/len(cards), 2), 'Matcher': len(cards)})
                 if team_stats:
                     st.dataframe(pd.DataFrame(team_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
-                else:
-                    st.warning("Inga lag uppfyller kriteriet för antal matcher.")
 
-            else:
-                st.info(f"Visar domare som har dömt minst **{num_matches}** matcher i valda ligan.")
+            elif top_cat == "Domare":
+                st.info(f"Visar domare med minst **{num_matches}** dömda matcher.")
                 ref_stats = []
                 for r in filtered_df['ref_clean'].unique():
                     if r in ["0", "Okänd", "nan"]: continue
                     r_matches = filtered_df[filtered_df['ref_clean'] == r].sort_values('datetime', ascending=False)
-                    # KRITERIUM: Måste ha minst X matcher
                     if len(r_matches) >= num_matches:
                         recent = r_matches.head(num_matches)
                         avg = (recent['Gula kort Hemma'].sum() + recent['Gula Kort Borta'].sum()) / len(recent)
-                        ref_stats.append({'Domare': r, 'Snitt Kort': round(avg, 2), 'Matcher i urval': len(recent)})
+                        ref_stats.append({'Domare': r, 'Snitt Kort': round(avg, 2), 'Matcher': len(recent)})
                 if ref_stats:
                     st.dataframe(pd.DataFrame(ref_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
+
+            else:
+                st.info(f"Analyserar kommande matcher baserat på lagens snitt (sista {num_matches} matcherna).")
+                upcoming = df[df['response.fixture.status.short'] == 'NS'].sort_values('datetime', ascending=True).head(30)
+                if sel_league != "Alla":
+                    upcoming = upcoming[upcoming['response.league.name'] == sel_league]
+                
+                analysis_results = []
+                for _, row in upcoming.iterrows():
+                    h_team, a_team = row['response.teams.home.name'], row['response.teams.away.name']
+                    ref = row['ref_clean']
+                    
+                    # Beräkna hemmasnitt
+                    h_matches = filtered_df[(filtered_df['response.teams.home.name'] == h_team) | (filtered_df['response.teams.away.name'] == h_team)].sort_values('datetime', ascending=False).head(num_matches)
+                    h_avg = sum([r['Gula kort Hemma'] if r['response.teams.home.name'] == h_team else r['Gula Kort Borta'] for _, r in h_matches.iterrows()]) / len(h_matches) if not h_matches.empty else 0
+                    
+                    # Beräkna bortasnitt
+                    a_matches = filtered_df[(filtered_df['response.teams.home.name'] == a_team) | (filtered_df['response.teams.away.name'] == a_team)].sort_values('datetime', ascending=False).head(num_matches)
+                    a_avg = sum([r['Gula kort Hemma'] if r['response.teams.home.name'] == a_team else r['Gula Kort Borta'] for _, r in a_matches.iterrows()]) / len(a_matches) if not a_matches.empty else 0
+                    
+                    # Domarsnitt (om finns)
+                    ref_avg = "N/A"
+                    if ref not in ["0", "Okänd", "nan"]:
+                        r_matches = filtered_df[filtered_df['ref_clean'] == ref].sort_values('datetime', ascending=False).head(num_matches)
+                        if not r_matches.empty:
+                            ref_avg = round((r_matches['Gula kort Hemma'].sum() + r_matches['Gula Kort Borta'].sum()) / len(r_matches), 2)
+                    
+                    total_index = round(h_avg + a_avg, 2)
+                    analysis_results.append({
+                        'Match': f"{h_team} vs {a_team}",
+                        'Hemma snitt': round(h_avg, 2),
+                        'Borta snitt': round(a_avg, 2),
+                        'Kombinerat (Lagen)': total_index,
+                        'Domare (Snitt)': ref_avg,
+                        'Liga': row['response.league.name']
+                    })
+                
+                if analysis_results:
+                    analysis_df = pd.DataFrame(analysis_results).sort_values('Kombinerat (Lagen)', ascending=False)
+                    st.dataframe(analysis_df, use_container_width=True, hide_index=True)
                 else:
-                    st.warning("Inga domare uppfyller kriteriet för antal matcher.")
+                    st.warning("Inga kommande matcher hittades med valt filter.")
+
 else:
     st.error("Kunde inte ladda data.")
