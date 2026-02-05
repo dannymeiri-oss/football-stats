@@ -143,7 +143,6 @@ if df is not None:
                 st.markdown(f'<div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;"><div style="width: 80px; text-align: right; font-size: 1.4rem; font-weight: bold; color: black; padding-right: 15px;">{h_val}{suffix}</div><div style="width: 220px; background: #e63946; color: white; text-align: center; padding: 6px; font-weight: bold; font-size: 0.85rem; border-radius: 2px; text-transform: uppercase;">{label}</div><div style="width: 80px; text-align: left; font-size: 1.4rem; font-weight: bold; color: black; padding-left: 15px;">{a_val}{suffix}</div></div>', unsafe_allow_html=True)
 
     else:
-        # --- HUVUDMENY MED FEM FLIKAR ---
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell", "📊 Topplista"])
         
         with tab1:
@@ -224,7 +223,7 @@ if df is not None:
             top_cat = st.radio("Välj kategori:", ["Lag", "Domare"], horizontal=True)
             
             c1, c2 = st.columns(2)
-            with c1: num_matches = st.slider("Antal senaste matcher:", 1, 20, 5)
+            with c1: num_matches = st.slider("Antal senaste matcher (Kriterium):", 1, 20, 5)
             with c2: 
                 all_leagues = ["Alla"] + sorted(df['response.league.name'].unique().tolist()) if 'response.league.name' in df.columns else ["Alla"]
                 sel_league = st.selectbox("Välj liga:", all_leagues, key="top_league_filter")
@@ -234,26 +233,35 @@ if df is not None:
                 filtered_df = filtered_df[filtered_df['response.league.name'] == sel_league]
 
             if top_cat == "Lag":
+                st.info(f"Visar lag som har spelat minst **{num_matches}** matcher i valda ligan.")
                 team_stats = []
                 teams = sorted(pd.concat([filtered_df['response.teams.home.name'], filtered_df['response.teams.away.name']]).unique())
                 for t in teams:
-                    t_matches = filtered_df[(filtered_df['response.teams.home.name'] == t) | (filtered_df['response.teams.away.name'] == t)].sort_values('datetime', ascending=False).head(num_matches)
-                    if not t_matches.empty:
-                        cards = [row['Gula kort Hemma'] if row['response.teams.home.name'] == t else row['Gula Kort Borta'] for _, row in t_matches.iterrows()]
-                        team_stats.append({'Lag': t, 'Snitt Kort': round(sum(cards)/len(cards), 2), 'Matcher': len(cards)})
+                    t_matches = filtered_df[(filtered_df['response.teams.home.name'] == t) | (filtered_df['response.teams.away.name'] == t)].sort_values('datetime', ascending=False)
+                    # KRITERIUM: Måste ha minst X matcher totalt i filterade datasetet
+                    if len(t_matches) >= num_matches:
+                        recent = t_matches.head(num_matches)
+                        cards = [row['Gula kort Hemma'] if row['response.teams.home.name'] == t else row['Gula Kort Borta'] for _, row in recent.iterrows()]
+                        team_stats.append({'Lag': t, 'Snitt Kort': round(sum(cards)/len(cards), 2), 'Matcher i urval': len(cards)})
                 if team_stats:
                     st.dataframe(pd.DataFrame(team_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
+                else:
+                    st.warning("Inga lag uppfyller kriteriet för antal matcher.")
 
             else:
+                st.info(f"Visar domare som har dömt minst **{num_matches}** matcher i valda ligan.")
                 ref_stats = []
                 for r in filtered_df['ref_clean'].unique():
                     if r in ["0", "Okänd", "nan"]: continue
-                    r_matches = filtered_df[filtered_df['ref_clean'] == r].sort_values('datetime', ascending=False).head(num_matches)
-                    if not r_matches.empty:
-                        avg = (r_matches['Gula kort Hemma'].sum() + r_matches['Gula Kort Borta'].sum()) / len(r_matches)
-                        if avg >= 1.0:
-                            ref_stats.append({'Domare': r, 'Snitt Kort': round(avg, 2), 'Matcher': len(r_matches)})
+                    r_matches = filtered_df[filtered_df['ref_clean'] == r].sort_values('datetime', ascending=False)
+                    # KRITERIUM: Måste ha minst X matcher
+                    if len(r_matches) >= num_matches:
+                        recent = r_matches.head(num_matches)
+                        avg = (recent['Gula kort Hemma'].sum() + recent['Gula Kort Borta'].sum()) / len(recent)
+                        ref_stats.append({'Domare': r, 'Snitt Kort': round(avg, 2), 'Matcher i urval': len(recent)})
                 if ref_stats:
                     st.dataframe(pd.DataFrame(ref_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
+                else:
+                    st.warning("Inga domare uppfyller kriteriet för antal matcher.")
 else:
     st.error("Kunde inte ladda data.")
