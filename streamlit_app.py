@@ -199,6 +199,22 @@ if df is not None:
                             c1.metric("Passnings%", f"{int(a_df['Passningssäkerhet Borta'].mean())}%")
                             c2.metric("Räddningar", round(a_df['Räddningar Borta'].mean(), 1))
                             c1.metric("Offside", round(a_df['Offside Borta'].mean(), 1))
+                    
+                    # --- NY SEKTION: SENASTE 10 MATCHER (TOTALT) ---
+                    st.divider()
+                    st.subheader(f"📅 Senaste 10 matcher för {sel_team}")
+                    last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | 
+                                      (team_df['response.teams.away.name'] == sel_team)) & 
+                                     (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
+                    
+                    if not last_10.empty:
+                        l10_display = last_10.rename(columns={
+                            'response.teams.home.name': 'Hemmalag',
+                            'response.teams.away.name': 'Bortalag',
+                            'response.goals.home': 'Mål H',
+                            'response.goals.away': 'Mål B'
+                        })
+                        st.dataframe(l10_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
 
         # --- TAB 3: DOMARANALYS ---
         with tab3:
@@ -235,7 +251,7 @@ if df is not None:
                     })
                     st.dataframe(
                         r_df_display[['Speltid', 'Hemmalag', 'Bortalag', 'Gula H', 'Gula B', 'Straff H', 'Straff B']]
-                        .sort_values('Speltid', ascending=False),
+                        .sort_values('datetime', ascending=False),
                         use_container_width=True, hide_index=True
                     )
 
