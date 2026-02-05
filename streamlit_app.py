@@ -271,8 +271,18 @@ if df is not None:
                     d3.metric("Antal Straffar", int(straff_tot))
                     st.divider()
                     st.subheader("Senaste dömda matcher")
-                    r_df_display = r_df.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'Gula kort Hemma': 'Gula H', 'Gula Kort Borta': 'Gula B', 'Straffar Hemma': 'Straff H', 'Straffar Borta': 'Straff B'})
-                    st.dataframe(r_df_display[['Speltid', 'Hemmalag', 'Bortalag', 'Gula H', 'Gula B', 'Straff H', 'Straff B']].sort_values('datetime', ascending=False), use_container_width=True, hide_index=True)
+                    
+                    # FIX: Sortera på datetime INNAN vi döper om kolumnerna
+                    r_df_sorted = r_df.sort_values('datetime', ascending=False)
+                    r_df_display = r_df_sorted.rename(columns={
+                        'response.teams.home.name': 'Hemmalag', 
+                        'response.teams.away.name': 'Bortalag', 
+                        'Gula kort Hemma': 'Gula H', 
+                        'Gula Kort Borta': 'Gula B', 
+                        'Straffar Hemma': 'Straff H', 
+                        'Straffar Borta': 'Straff B'
+                    })
+                    st.dataframe(r_df_display[['Speltid', 'Hemmalag', 'Bortalag', 'Gula H', 'Gula B', 'Straff H', 'Straff B']], use_container_width=True, hide_index=True)
 
         with tab4:
             if standings_df is not None: 
