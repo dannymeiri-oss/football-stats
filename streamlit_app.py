@@ -216,7 +216,6 @@ if df is not None:
                             c1.metric("Mål", round(h_df['response.goals.home'].mean(), 2)); c2.metric("xG", round(h_df['xG Hemma'].mean(), 2))
                             c1.metric("Bollinnehav", f"{int(h_df['Bollinnehav Hemma'].mean())}%"); c2.metric("Hörnor", round(h_df['Hörnor Hemma'].mean(), 1))
                             c1.metric("Gula Kort", round(h_df['Gula kort Hemma'].mean(), 1)); c2.metric("Röda Kort", round(h_df['Röda kort Hemma'].mean(), 2))
-                            # DJUPANALYS HEMMA
                             c1.metric("Skott på mål", round(h_df['Skott på mål Hemma'].mean(), 1)); c2.metric("Passningar", int(h_df['Passningar totalt Hemma'].mean()))
                             c1.metric("Offside", round(h_df['Offside Hemma'].mean(), 1)); c2.metric("Fouls", round(h_df['Fouls Hemma'].mean(), 1))
                     with col_a:
@@ -226,7 +225,6 @@ if df is not None:
                             c1.metric("Mål", round(a_df['response.goals.away'].mean(), 2)); c2.metric("xG", round(a_df['xG Borta'].mean(), 2))
                             c1.metric("Bollinnehav", f"{int(a_df['Bollinnehav Borta'].mean())}%"); c2.metric("Hörnor", round(a_df['Hörnor Borta'].mean(), 1))
                             c1.metric("Gula Kort", round(a_df['Gula Kort Borta'].mean(), 1)); c2.metric("Röda Kort", round(a_df['Röda kort Borta'].mean(), 2))
-                            # DJUPANALYS BORTA
                             c1.metric("Skott på mål", round(a_df['Skott på mål Borta'].mean(), 1)); c2.metric("Passningar", int(a_df['Passningar totalt Borta'].mean()))
                             c1.metric("Offside", round(a_df['Offside Borta'].mean(), 1)); c2.metric("Fouls", round(a_df['Fouls Borta'].mean(), 1))
                     
@@ -254,7 +252,14 @@ if df is not None:
                     st.dataframe(r_df_sorted[['Speltid', 'response.teams.home.name', 'response.teams.away.name', 'Gula kort Hemma', 'Gula Kort Borta']], use_container_width=True, hide_index=True)
 
         with tab4:
-            if standings_df is not None: st.dataframe(standings_df, use_container_width=True, hide_index=True)
+            st.header("🏆 Tabell")
+            if standings_df is not None:
+                # Dynamisk ligafiltrering för tabellen
+                liga_col = standings_df.columns[0]
+                available_leagues = sorted(standings_df[liga_col].dropna().unique().tolist())
+                sel_league_stand = st.selectbox("Välj liga:", available_leagues, key="stand_sel")
+                display_table = standings_df[standings_df[liga_col] == sel_league_stand].copy()
+                st.dataframe(display_table.iloc[:, 1:], use_container_width=True, hide_index=True)
 
         with tab5:
             st.header("📊 Topplista")
