@@ -6,25 +6,17 @@ from datetime import datetime
 # --- CONFIG & SETUP ---
 st.set_page_config(page_title="Perfect Layout - Football Analysis", layout="wide")
 
-# Ditt specifika Sheet ID från länken
-SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
+SHEET_ID = "1S0N-R_fUj4W_Ew_L7Y09N_7v9E0yY0f"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Raw+Data"
-STANDINGS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Standings"
 
 @st.cache_data(ttl=600)
 def load_data():
     try:
-        # Hämta Raw Data
         df = pd.read_csv(RAW_DATA_URL)
-        # Hämta Standings (om den finns, annars None)
-        try:
-            st_df = pd.read_csv(STANDINGS_URL)
-        except:
-            st_df = None
-        return df, st_df
+        return df
     except Exception as e:
         st.error(f"Fel vid inläsning av Google Sheets: {e}")
-        return None, None
+        return None
 
 def format_referee(name):
     if pd.isna(name) or str(name).strip().lower() in ["nan", "unknown", "okänd", ""]:
@@ -39,11 +31,6 @@ def format_referee(name):
 def clean_stats(data):
     if data is None: return None
     
-    # --- SÄKERHETSSPÄRR MOT DUBLETTER ---
-    # Tar bort rader med samma Match-ID (Fixture ID)
-    if 'response.fixture.id' in data.columns:
-        data = data.drop_duplicates(subset=['response.fixture.id'], keep='first')
-    
     if 'response.fixture.date' in data.columns:
         data['datetime'] = pd.to_datetime(data['response.fixture.date'], errors='coerce')
     
@@ -56,7 +43,7 @@ def clean_stats(data):
     return data
 
 # --- LOAD DATA ---
-raw_df, standings_df = load_data()
+raw_df = load_data()
 df = clean_stats(raw_df)
 
 if df is not None:
@@ -68,13 +55,13 @@ if df is not None:
     filtered_df = df if vald_liga == "Alla" else df[df['response.league.name'] == vald_liga]
     
     # Huvudvy - Tabs
-    tab1, tab2, tab3, tab4 = st.tabs(["📅 Matcher", "📊 Team Analysis", "⚖️ Referee Analysis", "🏆 Tabell"])
+    tab1, tab2, tab3 = st.tabs(["📅 Matcher", "📊 Team Analysis", "⚖️ Referee Analysis"])
 
     # --- TAB 1: MATCHER & H2H ---
     with tab1:
         st.subheader("Kommande & Spelade Matcher")
         
-        # Sortera efter datum (senaste först)
+        # Sortera efter datum
         display_df = filtered_df.sort_values('datetime', ascending=False)
         
         for idx, row in display_df.head(20).iterrows():
@@ -86,11 +73,10 @@ if df is not None:
                 # --- H2H SEKTION ---
                 st.markdown("### Head-to-Head (H2H)")
                 
-                # 1. Domarrad (Ligger överst i H2H enligt önskemål)
+                # 1. Domarrad
                 ref_name = row['referee_clean']
                 ref_stats = "N/A"
                 if ref_name != "Domare: Okänd":
-                    # Räkna snitt på de 10 senaste matcherna för denna domare
                     ref_matches = df[df['referee_clean'] == ref_name].sort_values('datetime', ascending=False).head(10)
                     if not ref_matches.empty:
                         avg_cards = (ref_matches['response.statistics.0.Yellow Cards'].fillna(0) + 
@@ -103,7 +89,6 @@ if df is not None:
                 st.markdown("#### SEASON AVERAGES COMPARISON")
                 col1, col2, col3 = st.columns([2,1,2])
                 
-                # Beräkna snitt för hemma- och bortalag
                 h_avg = df[df['response.teams.home.name'] == h_team].iloc[:, 48:70].mean(numeric_only=True)
                 a_avg = df[df['response.teams.away.name'] == a_team].iloc[:, 48:70].mean(numeric_only=True)
                 
@@ -137,41 +122,5 @@ if df is not None:
             st.metric("Antal matcher i databasen", len(ref_data))
             st.dataframe(ref_data[['datetime', 'response.teams.home.name', 'response.teams.away.name', 'response.statistics.0.Yellow Cards', 'response.statistics.1.Yellow Cards']])
 
-    # --- TAB 4: DYNAMISK TABELL ---
-    with tab4:
-        st.header("🏆 Ligatabeller")
-        if standings_df is not None:
-            # Hämta unika ligor från Standings-fliken
-            if 'League' in standings_df.columns:
-                available_leagues = sorted(standings_df['League'].unique())
-                
-                selected_league_tab = st.selectbox("Välj liga att visa:", available_leagues)
-                
-                # Filtrera fram rätt liga
-                league_table = standings_df[standings_df['League'] == selected_league_tab].copy()
-                
-                # Visa tidsstämpel om den finns
-                if 'Updated' in league_table.columns:
-                    st.caption(f"Senast synkad: {league_table['Updated'].iloc[0]}")
-                
-                # Rendera tabellen
-                st.dataframe(
-                    league_table.drop(columns=['League', 'Updated'], errors='ignore'),
-                    column_config={
-                        "Logo": st.column_config.ImageColumn("", width="small"),
-                        "Rank": st.column_config.NumberColumn("Pos", format="%d"),
-                        "Points": st.column_config.NumberColumn("P"),
-                        "GF": "GM",
-                        "GA": "IM",
-                        "GD": "+/-"
-                    },
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.info("Kör ditt nya script i Google Sheets för att skapa tabell-datan.")
-        else:
-            st.warning("Hittade ingen flik vid namn 'Standings'. Se till att scriptet 'uppdateraDynamiskaTabeller' har körts.")
-
 else:
-    st.error(f"Kunde inte ladda data. Kontrollera att SHEET_ID är korrekt och att 'Raw Data' är tillgänglig.")
+    st.error("Kunde inte ladda data. Kontrollera SHEET_ID.")
