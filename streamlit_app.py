@@ -64,17 +64,25 @@ def clean_stats(data):
     if 'Säsong' not in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
-    # ÄNDRING: Vi loopar igenom ALLA kolumner i dataframen istället för en begränsad lista.
-    # Detta säkerställer att alla 32+ datapunkter behålls och formateras.
-    exclude_cols = ['name', 'logo', 'status', 'ref', 'datetime', 'Speltid', 'Säsong', 'league', 'fixture', 'date']
+    # Vi behåller din original-lista men lägger till alla dina 32 datapunkter här
+    needed_cols = [
+        'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
+        'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta', 
+        'Fouls Hemma', 'Fouls Borta', 'Straffar Hemma', 'Straffar Borta',
+        'Passningssäkerhet Hemma', 'Passningssäkerhet Borta', 'Skott på mål Hemma', 'Skott på mål Borta',
+        'Skott totalt Hemma', 'Skott totalt Borta', 'Röda kort Hemma', 'Röda kort Borta',
+        'Räddningar Hemma', 'Räddningar Borta', 'Offside Hemma', 'Offside Borta',
+        'response.goals.home', 'response.goals.away',
+        'Skott utanför Hemma', 'Skott utanför Borta', 'Blockerade skott Hemma', 'Blockerade skott Borta',
+        'Skott i straffområdet Hemma', 'Skott i straffområdet Borta', 'Skott utanför straffområdet Hemma', 'Skott utanför straffområdet Borta',
+        'Passningar totalt Hemma', 'Passningar totalt Borta'
+    ]
     
-    for col in data.columns:
-        # Om kolumnen inte är en text-kolumn (namn, logo, datum etc), försök tvätta den till nummer.
-        if not any(x in col.lower() for x in exclude_cols):
-            data[col] = pd.to_numeric(
-                data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), 
-                errors='coerce'
-            ).fillna(0.0)
+    for col in needed_cols:
+        if col in data.columns:
+            data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
+        else:
+            data[col] = 0.0
     
     # APPLICERA NY DOMAR-FORMATERING HÄR
     data['ref_clean'] = data.get('response.fixture.referee', "Okänd").apply(format_referee)
