@@ -31,7 +31,8 @@ st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html
 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
-STANDINGS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=1363673756"
+# KORREKT GID FÖR STANDINGS
+STANDINGS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=712668345"
 
 # --- 2. DATAHANTERING ---
 @st.cache_data(ttl=60)
@@ -47,9 +48,7 @@ def format_referee(name):
     if not name or pd.isna(name) or str(name).strip() in ["0", "Okänd", "nan", "None"]:
         return "Domare: Okänd"
     
-    # Ta bort allt efter kommatecken (landsinfo)
     name = str(name).split(',')[0].strip()
-    
     parts = name.split()
     if len(parts) >= 2:
         return f"{parts[0][0]}. {parts[-1]}"
@@ -64,7 +63,6 @@ def clean_stats(data):
     if 'Säsong' not in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
-    # DJUPANALYS-KOLUMNER TILLAGDA HÄR
     needed_cols = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
         'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta', 
@@ -252,14 +250,19 @@ if df is not None:
                     st.dataframe(r_df_sorted[['Speltid', 'response.teams.home.name', 'response.teams.away.name', 'Gula kort Hemma', 'Gula Kort Borta']], use_container_width=True, hide_index=True)
 
         with tab4:
-            st.header("🏆 Tabell")
+            st.header("🏆 Ligatabell")
             if standings_df is not None:
-                # Dynamisk ligafiltrering för tabellen
+                # Vi antar att första kolumnen i Standings-fliken är Liganamn
                 liga_col = standings_df.columns[0]
                 available_leagues = sorted(standings_df[liga_col].dropna().unique().tolist())
                 sel_league_stand = st.selectbox("Välj liga:", available_leagues, key="stand_sel")
+                
+                # Filtrera tabellen baserat på vald liga
                 display_table = standings_df[standings_df[liga_col] == sel_league_stand].copy()
+                # Visa tabellen utan liganamnet (eftersom det redan valts ovan)
                 st.dataframe(display_table.iloc[:, 1:], use_container_width=True, hide_index=True)
+            else:
+                st.info("Ingen tabell hittades. Kontrollera GID för Standings.")
 
         with tab5:
             st.header("📊 Topplista")
