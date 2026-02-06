@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from datetime import datetime, timedelta
 
 # --- 1. KONFIGURATION (PERFEKT LAYOUT - RÖR EJ) ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
@@ -31,7 +32,6 @@ st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html
 
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
-# KORREKT GID FÖR STANDINGS
 STANDINGS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=712668345"
 
 # --- 2. DATAHANTERING ---
@@ -44,10 +44,8 @@ def load_data(url):
     except: return None
 
 def format_referee(name):
-    """ Formaterar domarnamn till 'F. Efternamn' och tar bort land. """
     if not name or pd.isna(name) or str(name).strip() in ["0", "Okänd", "nan", "None"]:
         return "Domare: Okänd"
-    
     name = str(name).split(',')[0].strip()
     parts = name.split()
     if len(parts) >= 2:
@@ -57,9 +55,11 @@ def format_referee(name):
 def clean_stats(data):
     if data is None: return None
     if 'response.fixture.date' in data.columns:
-        data['datetime'] = pd.to_datetime(data['response.fixture.date'], errors='coerce')
+        # Konverterar till datetime och gör den 'naive' (tar bort tidszon) för säker jämförelse
+        data['datetime'] = pd.to_datetime(data['response.fixture.date'], errors='coerce').dt.tz_localize(None)
     else:
-        data['datetime'] = pd.Timestamp.now()
+        data['datetime'] = pd.Timestamp.now().replace(tzinfo=None)
+    
     if 'Säsong' not in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
@@ -109,7 +109,7 @@ if df is not None:
         referee_name = m['ref_clean']
         
         st.markdown(f"""
-            <div style="background-color: #0e1117; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px; border: 1px solid #333;">
+            <div style="background-color: #0e1117; padding: 20 (px; border-radius: 10px; text-align: center; margin-bottom: 20px; border: 1px solid #333;">
                 <div style="color: #ffcc00; font-weight: bold; letter-spacing: 2px; font-size: 1.2rem;">{"FULL TIME" if m['response.fixture.status.short'] == 'FT' else "UPCOMING"}</div>
                 <div style="display: flex; justify-content: center; align-items: center; gap: 30px; margin-top: 15px;">
                     <div style="flex: 1; text-align: right;">
@@ -177,8 +177,17 @@ if df is not None:
         
         with tab1:
             mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="mc_mode")
-            subset = df[df['response.fixture.status.short'] == ('NS' if mode == "Nästa matcher" else 'FT')]
-            for idx, r in subset.sort_values('datetime', ascending=(mode=="Nästa matcher")).head(30).iterrows():
+            if mode == "Nästa matcher":
+                # FILTER: Kommande 7 dagar
+                now = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                end_date = now + timedelta(days=7)
+                subset = df[(df['response.fixture.status.short'] == 'NS') & 
+                            (df['datetime'] >= now) & 
+                            (df['datetime'] <= end_date)]
+            else:
+                subset = df[df['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False).head(30)
+            
+            for idx, r in subset.sort_values('datetime', ascending=(mode=="Nästa matcher")).iterrows():
                 col_info, col_btn = st.columns([4.5, 1.5])
                 with col_info:
                     score = "VS" if mode == "Nästa matcher" else f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}"
@@ -252,22 +261,17 @@ if df is not None:
         with tab4:
             st.header("🏆 Ligatabell")
             if standings_df is not None:
-                # Vi antar att första kolumnen i Standings-fliken är Liganamn
                 liga_col = standings_df.columns[0]
                 available_leagues = sorted(standings_df[liga_col].dropna().unique().tolist())
                 sel_league_stand = st.selectbox("Välj liga:", available_leagues, key="stand_sel")
-                
-                # Filtrera tabellen baserat på vald liga
                 display_table = standings_df[standings_df[liga_col] == sel_league_stand].copy()
-                # Visa tabellen utan liganamnet (eftersom det redan valts ovan)
                 st.dataframe(display_table.iloc[:, 1:], use_container_width=True, hide_index=True)
             else:
-                st.info("Ingen tabell hittades. Kontrollera GID för Standings.")
+                st.info("Ingen tabell hittades.")
 
         with tab5:
             st.header("📊 Topplista")
             top_cat = st.radio("Välj kategori:", ["Lag", "Domare", "Heta Kortmatcher (Kommande)"], horizontal=True)
-            
             c1, c2 = st.columns(2)
             with c1: num_matches = st.slider("Antal senaste matcher (Kriterium):", 1, 20, 5)
             with c2: 
@@ -279,7 +283,6 @@ if df is not None:
                 filtered_df = filtered_df[filtered_df['response.league.name'] == sel_league]
 
             if top_cat == "Lag":
-                st.info(f"Visar lag med minst **{num_matches}** spelade matcher.")
                 team_stats = []
                 teams = sorted(pd.concat([filtered_df['response.teams.home.name'], filtered_df['response.teams.away.name']]).unique())
                 for t in teams:
@@ -292,7 +295,6 @@ if df is not None:
                     st.dataframe(pd.DataFrame(team_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
 
             elif top_cat == "Domare":
-                st.info(f"Visar domare med minst **{num_matches}** dömda matcher.")
                 ref_stats = []
                 for r in filtered_df['ref_clean'].unique():
                     if r in ["Domare: Okänd", "0", "Okänd", "nan"]: continue
@@ -305,40 +307,36 @@ if df is not None:
                     st.dataframe(pd.DataFrame(ref_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
 
             else:
-                st.info(f"Analyserar kommande matcher baserat på lagens snitt (sista {num_matches} matcherna).")
-                upcoming = df[df['response.fixture.status.short'] == 'NS'].sort_values('datetime', ascending=True).head(30)
+                upcoming = df[df['response.fixture.status.short'] == 'NS'].sort_values('datetime', ascending=True)
+                # Filtrera kommande 7 dagar även här
+                now_check = datetime.now().replace(tzinfo=None)
+                end_check = now_check + timedelta(days=7)
+                upcoming = upcoming[(upcoming['datetime'] >= now_check) & (upcoming['datetime'] <= end_check)]
+                
                 if sel_league != "Alla":
                     upcoming = upcoming[upcoming['response.league.name'] == sel_league]
                 
                 analysis_results = []
                 for _, row in upcoming.iterrows():
                     h_team, a_team = row['response.teams.home.name'], row['response.teams.away.name']
-                    ref = row['ref_clean']
-                    
                     h_matches = filtered_df[(filtered_df['response.teams.home.name'] == h_team) | (filtered_df['response.teams.away.name'] == h_team)].sort_values('datetime', ascending=False).head(num_matches)
                     h_avg = sum([r['Gula kort Hemma'] if r['response.teams.home.name'] == h_team else r['Gula Kort Borta'] for _, r in h_matches.iterrows()]) / len(h_matches) if not h_matches.empty else 0
-                    
                     a_matches = filtered_df[(filtered_df['response.teams.home.name'] == a_team) | (filtered_df['response.teams.away.name'] == a_team)].sort_values('datetime', ascending=False).head(num_matches)
                     a_avg = sum([r['Gula kort Hemma'] if r['response.teams.home.name'] == a_team else r['Gula Kort Borta'] for _, r in a_matches.iterrows()]) / len(a_matches) if not a_matches.empty else 0
                     
                     ref_avg_val = "N/A"
-                    if ref not in ["Domare: Okänd", "0", "Okänd", "nan"]:
-                        r_matches = filtered_df[filtered_df['ref_clean'] == ref].sort_values('datetime', ascending=False).head(num_matches)
+                    if row['ref_clean'] not in ["Domare: Okänd", "0", "Okänd", "nan"]:
+                        r_matches = filtered_df[filtered_df['ref_clean'] == row['ref_clean']].sort_values('datetime', ascending=False).head(num_matches)
                         if not r_matches.empty:
                             ref_avg_val = round((r_matches['Gula kort Hemma'].sum() + r_matches['Gula Kort Borta'].sum()) / len(r_matches), 2)
-                    
-                    total_index = round(h_avg + a_avg, 2)
+
                     analysis_results.append({
                         'Match': f"{h_team} vs {a_team}",
-                        'Hemma snitt': round(h_avg, 2),
-                        'Borta snitt': round(a_avg, 2),
-                        'Kombinerat (Lagen)': total_index,
+                        'Kombinerat (Lagen)': round(h_avg + a_avg, 2),
                         'Domare (Snitt)': ref_avg_val,
                         'Liga': row['response.league.name']
                     })
-                
                 if analysis_results:
-                    analysis_df = pd.DataFrame(analysis_results).sort_values('Kombinerat (Lagen)', ascending=False)
-                    st.dataframe(analysis_df, use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(analysis_results).sort_values('Kombinerat (Lagen)', ascending=False), use_container_width=True, hide_index=True)
 else:
     st.error("Kunde inte ladda data.")
