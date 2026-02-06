@@ -52,7 +52,6 @@ def format_referee(name):
     
     parts = name.split()
     if len(parts) >= 2:
-        # Om 'Sören Storks', gör till 'S. Storks'
         return f"{parts[0][0]}. {parts[-1]}"
     return name
 
@@ -65,6 +64,7 @@ def clean_stats(data):
     if 'Säsong' not in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
+    # DJUPANALYS-KOLUMNER TILLAGDA HÄR
     needed_cols = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
         'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta', 
@@ -72,16 +72,17 @@ def clean_stats(data):
         'Passningssäkerhet Hemma', 'Passningssäkerhet Borta', 'Skott på mål Hemma', 'Skott på mål Borta',
         'Skott totalt Hemma', 'Skott totalt Borta', 'Röda kort Hemma', 'Röda kort Borta',
         'Räddningar Hemma', 'Räddningar Borta', 'Offside Hemma', 'Offside Borta',
-        'response.goals.home', 'response.goals.away'
+        'response.goals.home', 'response.goals.away',
+        'Skott utanför Hemma', 'Skott utanför Borta', 'Blockerade skott Hemma', 'Blockerade skott Borta',
+        'Skott i straffområdet Hemma', 'Skott i straffområdet Borta', 'Skott utanför straffområdet Hemma', 'Skott utanför straffområdet Borta',
+        'Passningar totalt Hemma', 'Passningar totalt Borta'
     ]
     for col in needed_cols:
         if col not in data.columns: data[col] = 0.0
         else:
             data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
     
-    # APPLICERA NY DOMAR-FORMATERING HÄR
     data['ref_clean'] = data.get('response.fixture.referee', "Okänd").apply(format_referee)
-    
     data['Speltid'] = data['datetime'].dt.strftime('%d %b %Y')
     return data
 
@@ -139,7 +140,6 @@ if df is not None:
             m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else "N/A")
             
-            # --- DOMARE INFO ---
             if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
@@ -216,6 +216,9 @@ if df is not None:
                             c1.metric("Mål", round(h_df['response.goals.home'].mean(), 2)); c2.metric("xG", round(h_df['xG Hemma'].mean(), 2))
                             c1.metric("Bollinnehav", f"{int(h_df['Bollinnehav Hemma'].mean())}%"); c2.metric("Hörnor", round(h_df['Hörnor Hemma'].mean(), 1))
                             c1.metric("Gula Kort", round(h_df['Gula kort Hemma'].mean(), 1)); c2.metric("Röda Kort", round(h_df['Röda kort Hemma'].mean(), 2))
+                            # DJUPANALYS HEMMA
+                            c1.metric("Skott på mål", round(h_df['Skott på mål Hemma'].mean(), 1)); c2.metric("Passningar", int(h_df['Passningar totalt Hemma'].mean()))
+                            c1.metric("Offside", round(h_df['Offside Hemma'].mean(), 1)); c2.metric("Fouls", round(h_df['Fouls Hemma'].mean(), 1))
                     with col_a:
                         st.markdown("<div class='section-header'>✈️ Borta</div>", unsafe_allow_html=True)
                         if not a_df.empty:
@@ -223,6 +226,9 @@ if df is not None:
                             c1.metric("Mål", round(a_df['response.goals.away'].mean(), 2)); c2.metric("xG", round(a_df['xG Borta'].mean(), 2))
                             c1.metric("Bollinnehav", f"{int(a_df['Bollinnehav Borta'].mean())}%"); c2.metric("Hörnor", round(a_df['Hörnor Borta'].mean(), 1))
                             c1.metric("Gula Kort", round(a_df['Gula Kort Borta'].mean(), 1)); c2.metric("Röda Kort", round(a_df['Röda kort Borta'].mean(), 2))
+                            # DJUPANALYS BORTA
+                            c1.metric("Skott på mål", round(a_df['Skott på mål Borta'].mean(), 1)); c2.metric("Passningar", int(a_df['Passningar totalt Borta'].mean()))
+                            c1.metric("Offside", round(a_df['Offside Borta'].mean(), 1)); c2.metric("Fouls", round(a_df['Fouls Borta'].mean(), 1))
                     
                     st.divider(); st.subheader(f"📅 Senaste 10 matcher för {sel_team}")
                     last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | (team_df['response.teams.away.name'] == sel_team)) & (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
