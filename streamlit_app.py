@@ -42,6 +42,20 @@ def load_data(url):
         return data
     except: return None
 
+def format_referee(name):
+    """ Formaterar domarnamn till 'F. Efternamn' och tar bort land. """
+    if not name or pd.isna(name) or str(name).strip() in ["0", "Okänd", "nan", "None"]:
+        return "Domare: Okänd"
+    
+    # Ta bort allt efter kommatecken (landsinfo)
+    name = str(name).split(',')[0].strip()
+    
+    parts = name.split()
+    if len(parts) >= 2:
+        # Om 'Sören Storks', gör till 'S. Storks'
+        return f"{parts[0][0]}. {parts[-1]}"
+    return name
+
 def clean_stats(data):
     if data is None: return None
     if 'response.fixture.date' in data.columns:
@@ -64,7 +78,10 @@ def clean_stats(data):
         if col not in data.columns: data[col] = 0.0
         else:
             data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
-    data['ref_clean'] = data.get('response.fixture.referee', "Okänd").fillna("Okänd").apply(lambda x: str(x).split(',')[0].strip())
+    
+    # APPLICERA NY DOMAR-FORMATERING HÄR
+    data['ref_clean'] = data.get('response.fixture.referee', "Okänd").apply(format_referee)
+    
     data['Speltid'] = data['datetime'].dt.strftime('%d %b %Y')
     return data
 
@@ -123,7 +140,7 @@ if df is not None:
             m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else "N/A")
             
             # --- DOMARE INFO ---
-            if referee_name not in ["0", "Okänd", "nan", None]:
+            if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
                     ref_avg = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
@@ -160,7 +177,6 @@ if df is not None:
     else:
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell", "📊 Topplista"])
         
-        # ... Resten av koden (Matchcenter, Laganalys etc.) förblir exakt som i din sparade version ...
         with tab1:
             mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="mc_mode")
             subset = df[df['response.fixture.status.short'] == ('NS' if mode == "Nästa matcher" else 'FT')]
@@ -216,7 +232,7 @@ if df is not None:
 
         with tab3:
             st.header("⚖️ Domaranalys")
-            refs = sorted([r for r in df['ref_clean'].unique() if r not in ["0", "Okänd", "nan"]])
+            refs = sorted([r for r in df['ref_clean'].unique() if r not in ["Domare: Okänd", "0", "Okänd", "nan"]])
             rf1, rf2 = st.columns(2)
             with rf1: sel_ref = st.selectbox("Välj domare:", ["Välj domare..."] + refs, key="domaranalys_ref")
             with rf2: sel_ref_season = st.selectbox("Välj säsong för domare:", ["Alla"] + all_seasons, key="domaranalys_season")
@@ -265,7 +281,7 @@ if df is not None:
                 st.info(f"Visar domare med minst **{num_matches}** dömda matcher.")
                 ref_stats = []
                 for r in filtered_df['ref_clean'].unique():
-                    if r in ["0", "Okänd", "nan"]: continue
+                    if r in ["Domare: Okänd", "0", "Okänd", "nan"]: continue
                     r_matches = filtered_df[filtered_df['ref_clean'] == r].sort_values('datetime', ascending=False)
                     if len(r_matches) >= num_matches:
                         recent = r_matches.head(num_matches)
@@ -291,11 +307,11 @@ if df is not None:
                     a_matches = filtered_df[(filtered_df['response.teams.home.name'] == a_team) | (filtered_df['response.teams.away.name'] == a_team)].sort_values('datetime', ascending=False).head(num_matches)
                     a_avg = sum([r['Gula kort Hemma'] if r['response.teams.home.name'] == a_team else r['Gula Kort Borta'] for _, r in a_matches.iterrows()]) / len(a_matches) if not a_matches.empty else 0
                     
-                    ref_avg = "N/A"
-                    if ref not in ["0", "Okänd", "nan"]:
+                    ref_avg_val = "N/A"
+                    if ref not in ["Domare: Okänd", "0", "Okänd", "nan"]:
                         r_matches = filtered_df[filtered_df['ref_clean'] == ref].sort_values('datetime', ascending=False).head(num_matches)
                         if not r_matches.empty:
-                            ref_avg = round((r_matches['Gula kort Hemma'].sum() + r_matches['Gula Kort Borta'].sum()) / len(r_matches), 2)
+                            ref_avg_val = round((r_matches['Gula kort Hemma'].sum() + r_matches['Gula Kort Borta'].sum()) / len(r_matches), 2)
                     
                     total_index = round(h_avg + a_avg, 2)
                     analysis_results.append({
@@ -303,7 +319,7 @@ if df is not None:
                         'Hemma snitt': round(h_avg, 2),
                         'Borta snitt': round(a_avg, 2),
                         'Kombinerat (Lagen)': total_index,
-                        'Domare (Snitt)': ref_avg,
+                        'Domare (Snitt)': ref_avg_val,
                         'Liga': row['response.league.name']
                     })
                 
