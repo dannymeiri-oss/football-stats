@@ -52,6 +52,7 @@ def format_referee(name):
     
     parts = name.split()
     if len(parts) >= 2:
+        # Om 'Sören Storks', gör till 'S. Storks'
         return f"{parts[0][0]}. {parts[-1]}"
     return name
 
@@ -64,7 +65,6 @@ def clean_stats(data):
     if 'Säsong' not in data.columns:
         data['Säsong'] = data['datetime'].dt.year.astype(str)
 
-    # Vi behåller din original-lista men lägger till alla dina 32 datapunkter här
     needed_cols = [
         'xG Hemma', 'xG Borta', 'Bollinnehav Hemma', 'Bollinnehav Borta', 
         'Gula kort Hemma', 'Gula Kort Borta', 'Hörnor Hemma', 'Hörnor Borta', 
@@ -72,17 +72,12 @@ def clean_stats(data):
         'Passningssäkerhet Hemma', 'Passningssäkerhet Borta', 'Skott på mål Hemma', 'Skott på mål Borta',
         'Skott totalt Hemma', 'Skott totalt Borta', 'Röda kort Hemma', 'Röda kort Borta',
         'Räddningar Hemma', 'Räddningar Borta', 'Offside Hemma', 'Offside Borta',
-        'response.goals.home', 'response.goals.away',
-        'Skott utanför Hemma', 'Skott utanför Borta', 'Blockerade skott Hemma', 'Blockerade skott Borta',
-        'Skott i straffområdet Hemma', 'Skott i straffområdet Borta', 'Skott utanför straffområdet Hemma', 'Skott utanför straffområdet Borta',
-        'Passningar totalt Hemma', 'Passningar totalt Borta'
+        'response.goals.home', 'response.goals.away'
     ]
-    
     for col in needed_cols:
-        if col in data.columns:
-            data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
+        if col not in data.columns: data[col] = 0.0
         else:
-            data[col] = 0.0
+            data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
     
     # APPLICERA NY DOMAR-FORMATERING HÄR
     data['ref_clean'] = data.get('response.fixture.referee', "Okänd").apply(format_referee)
