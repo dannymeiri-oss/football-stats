@@ -14,7 +14,7 @@ st.markdown("""
     
     /* MATCHCENTER CSS */
     .match-row { background: white; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 5px; display: flex; align-items: center; }
-    .pos-tag { font-size: 0.75rem; color: #666; font-weight: normal; margin: 0 5px; }
+    .pos-tag { font-size: 0.75rem; color: #888; font-weight: bold; margin: 0 4px; padding: 1px 4px; background: #f0f0f0; border-radius: 3px; }
     
     /* H2H & ANALYS DESIGN */
     .stat-label-centered { color: #888; font-weight: bold; font-size: 0.75rem; text-transform: uppercase; text-align: center; margin-top: 15px; }
@@ -44,15 +44,23 @@ def load_data(url):
         return data
     except: return None
 
-def get_team_pos(team_name, standings):
-    """ Hämtar position (#) för ett lag från standings-datan. """
+def get_team_pos(team_name, league_name, standings):
+    """ Hämtar position (#) för ett lag från kolumn B (Index 1) baserat på lag och liga. """
     if standings is None or team_name is None: return ""
     try:
-        # Vi letar i kolumnen 'Team' (eller näst intill) och hämtar 'Rank' eller 'Pos'
-        # Antagande: Kolumn 1 är liganamn, Kolumn 2 är Rank/Pos, Kolumn 3 är Team
-        row = standings[standings.iloc[:, 2] == team_name]
+        # Kolumn 0 = Liga, Kolumn 1 = Position (Kolumn B i Sheets), Kolumn 2 = Team
+        league_col = standings.columns[0]
+        pos_col = standings.columns[1]  # Detta är Kolumn B
+        team_col = standings.columns[2]
+        
+        # Filtrera först på ligan för att undvika dubbletter av lagnamn i olika serier
+        league_filter = standings[standings[league_col] == league_name]
+        row = league_filter[league_filter[team_col] == team_name]
+        
         if not row.empty:
-            return f"#{int(row.iloc[0, 1])}"
+            # Vi tar värdet direkt från kolumn B
+            val = row[pos_col].values[0]
+            return f"#{val}"
     except: pass
     return ""
 
@@ -115,11 +123,11 @@ if df is not None:
         
         m = st.session_state.selected_match
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
+        l_name = m['response.league.name']
         referee_name = m['ref_clean']
         
-        # Hämta positioner för detaljvyn också
-        h_pos = get_team_pos(h_team, standings_df)
-        a_pos = get_team_pos(a_team, standings_df)
+        h_pos = get_team_pos(h_team, l_name, standings_df)
+        a_pos = get_team_pos(a_team, l_name, standings_df)
 
         st.markdown(f"""
             <div style="background-color: #0e1117; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px; border: 1px solid #333;">
@@ -127,7 +135,7 @@ if df is not None:
                 <div style="display: flex; justify-content: center; align-items: center; gap: 30px; margin-top: 15px;">
                     <div style="flex: 1; text-align: right;">
                         <img src="{m['response.teams.home.logo']}" width="60"><br>
-                        <span style="font-size: 1.1rem; font-weight: bold; color: white;">{h_team} <span style="color:#aaa;">{h_pos}</span></span>
+                        <span style="font-size: 1.1rem; font-weight: bold; color: white;">{h_team} <span style="color:#ffcc00;">{h_pos}</span></span>
                     </div>
                     <div style="display: flex; gap: 5px; align-items: center;">
                         <div style="background: #e63946; color: white; font-size: 2.5rem; padding: 5px 20px; border-radius: 5px; font-weight: bold;">{int(m['response.goals.home']) if m['response.fixture.status.short'] == 'FT' else 0}</div>
@@ -136,7 +144,7 @@ if df is not None:
                     </div>
                     <div style="flex: 1; text-align: left;">
                         <img src="{m['response.teams.away.logo']}" width="60"><br>
-                        <span style="font-size: 1.1rem; font-weight: bold; color: white;"><span style="color:#aaa;">{a_pos}</span> {a_team}</span>
+                        <span style="font-size: 1.1rem; font-weight: bold; color: white;"><span style="color:#ffcc00;">{a_pos}</span> {a_team}</span>
                     </div>
                 </div>
             </div>
@@ -198,8 +206,9 @@ if df is not None:
             
             for idx, r in subset.sort_values('datetime', ascending=(mode=="Nästa matcher")).iterrows():
                 h_name, a_name = r['response.teams.home.name'], r['response.teams.away.name']
-                h_pos = get_team_pos(h_name, standings_df)
-                a_pos = get_team_pos(a_name, standings_df)
+                l_name = r['response.league.name']
+                h_pos = get_team_pos(h_name, l_name, standings_df)
+                a_pos = get_team_pos(a_name, l_name, standings_df)
                 
                 col_info, col_btn = st.columns([4.5, 1.5])
                 with col_info:
