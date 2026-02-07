@@ -57,7 +57,7 @@ def load_data(url):
         return data
     except: return None
 
-# --- API ODDS HÄMTNING VIA FIXTURE ID (UPPDATERAD MED RÄTT IDs) ---
+# --- API ODDS HÄMTNING VIA FIXTURE ID (FIXAD FÖR HÖRNOR) ---
 @st.cache_data(ttl=600)
 def get_odds_by_fixture_id(fixture_id):
     """Hämtar odds direkt via fixture_id från API-Football."""
@@ -93,18 +93,40 @@ def get_odds_by_fixture_id(fixture_id):
                     if v['value'] == "Yes": res["btts"] = v['odd']
             
             # ID 15: Corners Over/Under
+            # FIX: Vi skapar en logik som letar efter bästa tillgängliga lina om 11.5 saknas
             if bet['id'] == 15: 
+                corner_lines = {}
                 for v in bet['values']:
-                    # Vi letar efter linan 11.5 specifikt
-                    if "11.5" in v['value'] and ("Over" in v['value'] or "Över" in v['value']):
-                        res["corners"] = v['odd']
+                    if "Over" in v['value']:
+                        # Spara alla "Over" odds med deras linje
+                        line_str = v['value'].replace("Over ", "").strip()
+                        corner_lines[line_str] = v['odd']
+                
+                # Prioritetsordning: Först 11.5, sen 10.5, sen 9.5
+                if "11.5" in corner_lines:
+                    res["corners"] = f"{corner_lines['11.5']} (Ö11.5)"
+                elif "10.5" in corner_lines:
+                    res["corners"] = f"{corner_lines['10.5']} (Ö10.5)"
+                elif "9.5" in corner_lines:
+                    res["corners"] = f"{corner_lines['9.5']} (Ö9.5)"
+                elif "8.5" in corner_lines:
+                    res["corners"] = f"{corner_lines['8.5']} (Ö8.5)"
             
             # ID 45: Cards Over/Under (Total i matchen)
             if bet['id'] == 45:
+                card_lines = {}
                 for v in bet['values']:
-                    # Vi tar 3.5 eller 4.5 som referens för att visa ett odds
-                    if ("3.5" in v['value'] or "4.5" in v['value']) and ("Over" in v['value'] or "Över" in v['value']):
-                        res["cards"] = f"{v['odd']} (Tot)"
+                    if "Over" in v['value']:
+                        line_str = v['value'].replace("Over ", "").strip()
+                        card_lines[line_str] = v['odd']
+                
+                # Försök hitta 3.5 eller 4.5
+                if "3.5" in card_lines:
+                    res["cards"] = f"{card_lines['3.5']} (Ö3.5)"
+                elif "4.5" in card_lines:
+                    res["cards"] = f"{card_lines['4.5']} (Ö4.5)"
+                elif "2.5" in card_lines:
+                    res["cards"] = f"{card_lines['2.5']} (Ö2.5)"
 
     except Exception as e:
         res["debug"] = f"Fel: {str(e)}"
@@ -283,9 +305,9 @@ if df is not None:
                 odds_data = get_odds_by_fixture_id(m['response.fixture.id'])
 
             o1, o2, o3, o4 = st.columns(4)
-            o1.metric("Marknads-odds (Kort)", odds_data["cards"])
+            o1.metric("Odds (Kort)", odds_data["cards"])
             o2.metric("BLGM Odds", odds_data["btts"])
-            o3.metric("Hörnor Odds (Ö11.5)", odds_data["corners"])
+            o3.metric("Hörnor Odds", odds_data["corners"])
             o4.metric(f"Domare ({referee_name if referee_name != 'Domare: Okänd' else 'Okänd'})", display_ref)
 
             # --- AI PREDICTIONS ---
