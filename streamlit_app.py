@@ -50,7 +50,6 @@ def get_team_pos(team_name, league_name, standings):
         league_col = standings.columns[0]
         pos_col = standings.columns[1]
         team_col = standings.columns[2]
-        
         row = standings[(standings[league_col].astype(str) == str(league_name)) & 
                         (standings[team_col].astype(str) == str(team_name))]
         if not row.empty:
@@ -217,7 +216,6 @@ if df is not None:
                 h_avg = get_rolling_card_avg(h_name, df)
                 a_avg = get_rolling_card_avg(a_name, df)
                 
-                # Färglogik: Grön om >= 2.00, annars svart
                 h_color = "#28a745" if h_avg >= 2.00 else "black"
                 a_color = "#28a745" if a_avg >= 2.00 else "black"
                 
@@ -273,7 +271,6 @@ if df is not None:
                     st.markdown("<div class='total-header'>TOTAL PRESTATION (SNITT)</div>", unsafe_allow_html=True)
                     t1, t2, t3, t4, t5, t6 = st.columns(6)
                     t1.metric("Matcher", tot_m); t2.metric("Mål", round((h_df['response.goals.home'].sum() + a_df['response.goals.away'].sum())/tot_m, 2)); t3.metric("xG", round((h_df['xG Hemma'].sum() + a_df['xG Borta'].sum())/tot_m, 2)); t4.metric("Hörnor", round((h_df['Hörnor Hemma'].sum() + a_df['Hörnor Borta'].sum())/tot_m, 1)); t5.metric("Gula Kort", round((h_df['Gula kort Hemma'].sum() + a_df['Gula Kort Borta'].sum())/tot_m, 1)); t6.metric("Bollinnehav", f"{int((h_df['Bollinnehav Hemma'].sum() + a_df['Bollinnehav Borta'].sum())/tot_m)}%")
-                    
                     col_h, col_a = st.columns(2)
                     with col_h:
                         st.markdown("<div class='section-header'>🏠 Hemma</div>", unsafe_allow_html=True)
@@ -289,7 +286,6 @@ if df is not None:
                             c1.metric("Mål", round(a_df['response.goals.away'].mean(), 2)); c2.metric("xG", round(a_df['xG Borta'].mean(), 2))
                             c1.metric("Bollinnehav", f"{int(a_df['Bollinnehav Borta'].mean())}%"); c2.metric("Hörnor", round(a_df['Hörnor Borta'].mean(), 1))
                             c1.metric("Gula Kort", round(a_df['Gula Kort Borta'].mean(), 1)); c2.metric("Röda Kort", round(a_df['Röda kort Borta'].mean(), 2))
-                    
                     st.divider(); st.subheader(f"📅 Senaste 10 matcher för {sel_team}")
                     last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | (team_df['response.teams.away.name'] == sel_team)) & (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                     if not last_10.empty:
@@ -300,10 +296,8 @@ if df is not None:
                             a_pos = get_team_pos(a_name, l_name, standings_df)
                             h_avg = get_rolling_card_avg(h_name, df)
                             a_avg = get_rolling_card_avg(a_name, df)
-                            
                             h_color = "#28a745" if h_avg >= 2.00 else "black"
                             a_color = "#28a745" if a_avg >= 2.00 else "black"
-                            
                             col_info, col_btn = st.columns([4.5, 1.5])
                             with col_info:
                                 score = f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}"
@@ -353,8 +347,31 @@ if df is not None:
                     m_count = len(r_df); gula_tot = r_df['Gula kort Hemma'].sum() + r_df['Gula Kort Borta'].sum()
                     d1, d2 = st.columns(2)
                     d1.metric("Antal Matcher", m_count); d2.metric("Gula Kort (Snitt)", round(gula_tot / m_count, 2) if m_count > 0 else 0)
+                    
+                    st.subheader("Matchhistorik - Gula Kort")
                     r_df_sorted = r_df.sort_values('datetime', ascending=False)
-                    st.dataframe(r_df_sorted[['Speltid', 'response.teams.home.name', 'response.teams.away.name', 'Gula kort Hemma', 'Gula Kort Borta']], use_container_width=True, hide_index=True)
+                    
+                    # Visa varje match i rader istället för standard dataframe för färgstöd
+                    for idx_r, row_r in r_df_sorted.iterrows():
+                        h_c = row_r['Gula kort Hemma']
+                        a_c = row_r['Gula Kort Borta']
+                        h_col_style = "color: #28a745; font-weight: bold;" if h_c >= 2.0 else "color: black;"
+                        a_col_style = "color: #28a745; font-weight: bold;" if a_c >= 2.0 else "color: black;"
+                        
+                        st.markdown(f"""
+                            <div class="match-row">
+                                <div style="width:100px; font-size:0.8rem; color:gray;">{row_r['Speltid']}</div>
+                                <div style="flex:1; text-align:right;">{row_r['response.teams.home.name']}</div>
+                                <div style="margin:0 15px; background:#f0f0f0; padding:2px 10px; border-radius:4px; display:flex; gap:10px;">
+                                    <span style="{h_col_style}">{int(h_c)}</span>
+                                    <span style="color:#ccc;">-</span>
+                                    <span style="{a_col_style}">{int(a_c)}</span>
+                                </div>
+                                <div style="flex:1; text-align:left;">{row_r['response.teams.away.name']}</div>
+                                <div style="width:30px; text-align:center;">🟨</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+
         with tab4:
             st.header("🏆 Ligatabell")
             if standings_df is not None:
