@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import json
 from datetime import datetime, timedelta
 
 # --- 1. KONFIGURATION (PERFEKT LAYOUT - RÖR EJ) ---
@@ -16,10 +17,6 @@ st.markdown("""
     /* MATCHCENTER CSS */
     .match-row { background: white; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 5px; display: flex; align-items: center; }
     .pos-tag { font-size: 0.75rem; color: #888; font-weight: bold; margin: 0 4px; padding: 1px 4px; background: #f0f0f0; border-radius: 3px; }
-    
-    /* KAMBI ODDS CSS */
-    .kambi-row { font-size: 0.8rem; background: #f1f8e9; padding: 5px 10px; border-radius: 4px; margin-top: 5px; color: #2e7d32; display: flex; justify-content: space-between; border: 1px solid #c8e6c9; }
-    .kambi-item { font-weight: bold; }
     
     /* H2H & ANALYS DESIGN */
     .stat-label-centered { color: #888; font-weight: bold; font-size: 0.75rem; text-transform: uppercase; text-align: center; margin-top: 15px; }
@@ -57,84 +54,98 @@ def load_data(url):
         return data
     except: return None
 
-@st.cache_data(ttl=3600) # Cacha odds i 1 timme för prestanda
+# --- KAMBI ODDS FETCHING (UNIBET) ---
+@st.cache_data(ttl=600) # Cacha i 10 minuter
 def get_kambi_odds(home_team, away_team):
-    """Hämtar specifika odds från Kambi (Unibet) API."""
+    """
+    Hämtar odds från Unibets API (Kambi).
+    Returnerar en dictionary med odds för: Kort Hemma, Kort Borta, BLGM, Hörnor.
+    """
+    # Standard return om inget hittas
+    res = {"home_y": "-", "away_y": "-", "btts": "-", "corners": "-"}
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Referer': 'https://www.unibet.se/',
+        'Origin': 'https://www.unibet.se'
+    }
+
     try:
-        # 1. Sök efter matchen
-        # Notera: En riktig sökning kräver ofta att man hämtar alla events eller använder deras search endpoint. 
-        # För stabilitet använder vi en 'Term Search' som oftast fungerar.
-        term_url = f"https://eu-offering-api.kambicdn.com/offering/v2018/ubse/term/search.json?lang=sv_SE&market=SE&client_id=2&channel_id=1&ncid=1708092345&query={home_team}"
+        # 1. Sök efter eventet (Fuzzy search)
+        # Vi söker på hemmalaget först
+        search_term = home_team.replace(" FC", "").replace(" FK", "").strip()
+        search_url = f"https://eu-offering-api.kambicdn.com/offering/v2018/ubse/term/search.json?lang=sv_SE&market=SE&client_id=2&channel_id=1&ncid=1708092345&query={search_term}"
         
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        resp = requests.get(term_url, headers=headers, timeout=3)
+        r_search = requests.get(search_url, headers=headers, timeout=4)
+        if r_search.status_code != 200: return res
         
-        if resp.status_code != 200: return None
-        
-        data = resp.json()
+        data_search = r_search.json()
         event_id = None
         
-        # Hitta rätt event ID
-        for item in data.get('result', []):
+        # Försök hitta matchen i sökresultaten
+        for item in data_search.get('result', []):
             if item.get('type') == 'Event' and item.get('sport') == 'FOOTBALL':
-                # Enkel matchning (Om bortalaget finns i eventnamnet)
-                if away_team.lower() in item.get('englishName', '').lower() or away_team.split(' ')[0].lower() in item.get('englishName', '').lower():
+                name = item.get('englishName', '').lower()
+                # Kolla om bortalagets namn (eller del av det) finns i eventnamnet
+                away_clean = away_team.replace(" FC", "").replace(" FK", "").split(' ')[0].lower()
+                if away_clean in name:
                     event_id = item.get('id')
                     break
         
-        if not event_id: return None
+        if not event_id: return res
 
-        # 2. Hämta odds för eventet
+        # 2. Hämta alla odds för eventet
         odds_url = f"https://eu-offering-api.kambicdn.com/offering/v2018/ubse/betoffer/event/{event_id}.json?lang=sv_SE&market=SE&client_id=2&channel_id=1&ncid=1708092345&includeParticipants=true"
-        odds_resp = requests.get(odds_url, headers=headers, timeout=3)
-        if odds_resp.status_code != 200: return None
+        r_odds = requests.get(odds_url, headers=headers, timeout=4)
+        if r_odds.status_code != 200: return res
         
-        odds_data = odds_resp.json()
+        data_odds = r_odds.json()
         
-        # 3. Extrahera specifika marknader
-        result = {"home_y": None, "away_y": None, "btts": None, "corners": None}
-        
-        if 'betOffers' in odds_data:
-            for offer in odds_data['betOffers']:
+        # 3. Parsa JSON för att hitta rätt marknader
+        if 'betOffers' in data_odds:
+            for offer in data_odds['betOffers']:
                 criterion = offer.get('criterion', {})
-                label = criterion.get('label', '')
-                eng_label = criterion.get('englishLabel', '')
+                label_swe = criterion.get('label', '')
+                label_eng = criterion.get('englishLabel', '')
                 
-                # BLGM
-                if label == "Båda lagen gör mål" or label == "Both Teams To Score":
+                # --- BLGM (Both Teams To Score) ---
+                if label_swe == "Båda lagen gör mål" or label_eng == "Both Teams To Score":
                     for outcome in offer.get('outcomes', []):
-                        if outcome.get('label') == "Ja" or outcome.get('label') == "Yes":
-                            result["btts"] = outcome.get('odds', 0) / 1000 # Kambi ger odds i heltal (1750 = 1.75)
-                
-                # Hörnor (Över 11.5)
-                # Kambi har ofta "Hörnor - Totalt" med olika linjer. Vi letar efter line 11500 (11.5)
-                if "Hörnor" in label and "Totalt" in label:
-                     for outcome in offer.get('outcomes', []):
-                        if outcome.get('line') == 11500: # 11.5 i Kambi-format
-                             if outcome.get('label') == "Över":
-                                 result["corners"] = outcome.get('odds', 0) / 1000
+                        if outcome.get('label') in ["Ja", "Yes"]:
+                            res["btts"] = f"{outcome.get('odds', 0) / 1000:.2f}"
 
-                # Gula kort per lag (Över 1.5)
-                # Vi letar efter criterion.englishLabel som innehåller "Total Cards" och lagnamnet
-                # Ibland heter det "Total Yellow Cards" eller "Total Cards - Home Team"
-                if "Total Cards" in eng_label or "Total Yellow Cards" in eng_label:
-                    is_home = "Home Team" in eng_label or home_team in eng_label
-                    is_away = "Away Team" in eng_label or away_team in eng_label
+                # --- HÖRNOR (Total Corners) ---
+                # Vi letar efter linan 11.5 (Kambi kod: 11500)
+                if "Hörnor" in label_swe and "Totalt" in label_swe:
+                    for outcome in offer.get('outcomes', []):
+                        if outcome.get('line') == 11500: # 11.5
+                            if outcome.get('label') in ["Över", "Over"]:
+                                res["corners"] = f"{outcome.get('odds', 0) / 1000:.2f}"
+
+                # --- GULA KORT PER LAG (Team Total Cards) ---
+                # Linan 1.5 (Kambi kod: 1500)
+                # Kambi strukturerar ofta detta som "Total Cards - Home Team"
+                if "Total Cards" in label_eng or "Antal kort" in label_swe:
+                    is_home = "Home Team" in label_eng or home_team in label_eng
+                    is_away = "Away Team" in label_eng or away_team in label_eng
                     
                     if is_home:
                         for outcome in offer.get('outcomes', []):
-                            if outcome.get('line') == 1500 and (outcome.get('label') == "Over" or outcome.get('label') == "Över"):
-                                result["home_y"] = outcome.get('odds', 0) / 1000
-                    
+                            if outcome.get('line') == 1500: # 1.5
+                                if outcome.get('label') in ["Över", "Over"]:
+                                    res["home_y"] = f"{outcome.get('odds', 0) / 1000:.2f}"
+                                    
                     if is_away:
                         for outcome in offer.get('outcomes', []):
-                            if outcome.get('line') == 1500 and (outcome.get('label') == "Over" or outcome.get('label') == "Över"):
-                                result["away_y"] = outcome.get('odds', 0) / 1000
+                            if outcome.get('line') == 1500: # 1.5
+                                if outcome.get('label') in ["Över", "Over"]:
+                                    res["away_y"] = f"{outcome.get('odds', 0) / 1000:.2f}"
 
-        return result
+    except Exception:
+        pass # Vid fel returnerar vi bara "-"
 
-    except Exception as e:
-        return None
+    return res
 
 def get_team_pos(team_name, league_name, standings):
     if standings is None or team_name is None: return ""
@@ -298,23 +309,26 @@ if df is not None:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
                     display_ref = f"{ref_avg_val:.2f}"
             
-            # --- KAMBI ODDS FETCH ---
-            # Här hämtar vi live odds från Kambi om det finns
-            with st.spinner('Hämtar live-odds från Kambi...'):
-                kambi_odds = get_kambi_odds(h_team, a_team)
+            # --- KAMBI ODDS LIVE FETCH ---
+            # Försök hämta odds om det är en kommande match
+            if m['response.fixture.status.short'] == 'NS':
+                odds_data = get_kambi_odds(h_team, a_team)
+            else:
+                odds_data = {"home_y": "-", "away_y": "-", "btts": "-", "corners": "-"}
+
+            d_odd_h = odds_data.get("home_y", "-")
+            d_odd_a = odds_data.get("away_y", "-")
+            dummy_odd_btts = odds_data.get("btts", "-")
+            dummy_odd_corn = odds_data.get("corners", "-")
             
-            # Standardvärden om inget hittas (visar "Ej hittat" eller "-")
-            d_odd_h = kambi_odds.get("home_y") if kambi_odds and kambi_odds.get("home_y") else "-"
-            d_odd_a = kambi_odds.get("away_y") if kambi_odds and kambi_odds.get("away_y") else "-"
-            
-            # Vi räknar bara komb-odds om vi har båda, annars "-"
+            # Beräkna komb-odds om möjligt
             if d_odd_h != "-" and d_odd_a != "-":
-                comb_odds = round(float(d_odd_h) * float(d_odd_a), 2)
+                try:
+                    comb_odds = f"{float(d_odd_h) * float(d_odd_a):.2f}"
+                except:
+                    comb_odds = "-"
             else:
                 comb_odds = "-"
-                
-            dummy_odd_btts = kambi_odds.get("btts") if kambi_odds and kambi_odds.get("btts") else "-"
-            dummy_odd_corn = kambi_odds.get("corners") if kambi_odds and kambi_odds.get("corners") else "-"
 
             o1, o2, o3, o4 = st.columns(4)
             o1.metric("Komb-odds (Ö1.5 Kort)", f"{comb_odds}")
@@ -375,7 +389,7 @@ if df is not None:
             goal_reason = f"**⚽ Målchanser:** "
             if btts_score > 2.6:
                 goal_reason += f"Båda lagen visar fin offensiv form samtidigt som försvaren läcker. BLGM (Båda lagen gör mål) ser statistiskt starkt ut."
-            elif h_scored > 2.0 and a_scored < 0.8: # Fixade variabelnamn här som saknades i din kod
+            elif h_scored > 2.0 and a_scored < 0.8:
                 goal_reason += f"Data pekar på en ensidig matchbild där {h_team} dominerar. Risken är att {a_team} får svårt att näta."
             else:
                 goal_reason += "En svårbedömd målbild där dagsformen blir avgörande."
@@ -409,7 +423,6 @@ if df is not None:
                 if h_corn_avg >= 5.5: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {h_team} UNDER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
             with col_c2:
-                # Denna är tom i originalkoden för bortalaget på hörnor-boxen layoutmässigt om vi följer mönstret, men här visar vi samma odds eller analys
                 if a_corn_avg >= 5.5: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
 
