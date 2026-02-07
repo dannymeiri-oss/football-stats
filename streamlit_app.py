@@ -156,6 +156,7 @@ if df is not None:
             m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else "N/A")
             
+            # --- REFEREE SECTION IN H2H ---
             if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
@@ -272,13 +273,15 @@ if df is not None:
                     last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | (team_df['response.teams.away.name'] == sel_team)) & (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                     if not last_10.empty:
                         l10_display = last_10.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
-                        # --- UPPDATERAD TABELL (MATCHCENTER-STIL) ---
+                        # --- FIXAD LAYOUT FÖR TABELLEN (ENLIGT BILD 19d169) ---
                         st.dataframe(
                             l10_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']],
                             column_config={
-                                "Speltid": st.column_config.TextColumn("Speltid"),
-                                "Mål H": st.column_config.NumberColumn("H", format="%d"),
-                                "Mål B": st.column_config.NumberColumn("B", format="%d"),
+                                "Speltid": st.column_config.TextColumn("Datum"),
+                                "Hemmalag": st.column_config.TextColumn("Hemmalag"),
+                                "Mål H": st.column_config.NumberColumn("H", width="small"),
+                                "Mål B": st.column_config.NumberColumn("B", width="small"),
+                                "Bortalag": st.column_config.TextColumn("Bortalag")
                             },
                             use_container_width=True, 
                             hide_index=True
