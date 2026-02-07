@@ -57,7 +57,7 @@ def load_data(url):
         return data
     except: return None
 
-# --- API ODDS HÄMTNING VIA FIXTURE ID ---
+# --- API ODDS HÄMTNING VIA FIXTURE ID (UPPDATERAD MED RÄTT IDs) ---
 @st.cache_data(ttl=600)
 def get_odds_by_fixture_id(fixture_id):
     """Hämtar odds direkt via fixture_id från API-Football."""
@@ -72,8 +72,6 @@ def get_odds_by_fixture_id(fixture_id):
     }
     
     try:
-        # Eftersom vi har ID:t kan vi gå direkt till odds endpointen
-        # Konvertera till int för att ta bort eventuella decimaler från Excel (t.ex. 12345.0 -> 12345)
         fid = int(float(fixture_id))
         url = f"{API_BASE_URL}/odds?fixture={fid}"
         
@@ -84,28 +82,28 @@ def get_odds_by_fixture_id(fixture_id):
             res["debug"] = "Inga odds publicerade än."
             return res
             
-        # Hämta första bästa bookmaker (Helst Bet365 ID=1)
+        # Hämta bokmakare (Prioritera Bet365 ID=1)
         bookmakers = data['response'][0]['bookmakers']
         bookie = next((b for b in bookmakers if b['id'] == 1), bookmakers[0])
         
         for bet in bookie['bets']:
-            # BLGM (ID 8)
+            # ID 8: Both Teams To Score (BLGM)
             if bet['id'] == 8:
                 for v in bet['values']:
                     if v['value'] == "Yes": res["btts"] = v['odd']
             
-            # Hörnor (ID 15) - Total Corners
-            if "Corners" in bet['name']: 
+            # ID 15: Corners Over/Under
+            if bet['id'] == 15: 
                 for v in bet['values']:
-                    # Vi letar efter linan 11.5
-                    if "11.5" in v['value'] and "Over" in v['value']:
+                    # Vi letar efter linan 11.5 specifikt
+                    if "11.5" in v['value'] and ("Over" in v['value'] or "Över" in v['value']):
                         res["corners"] = v['odd']
             
-            # Kort - Total Cards (ID varierar, ofta ~45)
-            # Vi letar efter en lina runt 3.5 eller 4.5 som proxy för kortintensitet
-            if "Cards" in bet['name'] and "Total" in bet['name']:
+            # ID 45: Cards Over/Under (Total i matchen)
+            if bet['id'] == 45:
                 for v in bet['values']:
-                    if ("3.5" in v['value'] or "4.5" in v['value']) and "Over" in v['value']:
+                    # Vi tar 3.5 eller 4.5 som referens för att visa ett odds
+                    if ("3.5" in v['value'] or "4.5" in v['value']) and ("Over" in v['value'] or "Över" in v['value']):
                         res["cards"] = f"{v['odd']} (Tot)"
 
     except Exception as e:
@@ -197,12 +195,11 @@ def clean_stats(data):
         'Skott utanför Hemma', 'Skott utanför Borta', 'Blockerade skott Hemma', 'Blockerade skott Borta',
         'Skott i straffområdet Hemma', 'Skott i straffområdet Borta', 'Skott utanför straffområdet Hemma', 'Skott utanför straffområdet Borta',
         'Passningar totalt Hemma', 'Passningar totalt Borta',
-        'response.fixture.id' # Se till att ID finns med
+        'response.fixture.id'
     ]
     for col in needed_cols:
         if col not in data.columns: data[col] = 0.0
         else:
-            # Undvik att konvertera fixture.id till 0.0 om det är ett ID
             if col == 'response.fixture.id':
                 data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
             else:
@@ -281,7 +278,6 @@ if df is not None:
                     display_ref = f"{ref_avg_val:.2f}"
             
             # --- HÄMTA ODDS (NY FUNKTION) ---
-            # Vi hämtar odds endast för kommande matcher där Fixture ID finns
             odds_data = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
             if m['response.fixture.status.short'] == 'NS' and 'response.fixture.id' in m:
                 odds_data = get_odds_by_fixture_id(m['response.fixture.id'])
@@ -320,7 +316,7 @@ if df is not None:
             # 4. TEXT-SLUTSATS GENERERING
             conclusion_paragraphs = []
             
-            # Kort-analys (Stycke 1)
+            # Kort-analys
             card_reason = f"**🟨 Kort & Intensitet:** Modellens prognos på **{total_cards_pred:.1f} kort** baseras på att {h_team} snittar {h_card_avg:.1f} och {a_team} {a_card_avg:.1f} kort de senaste 20 matcherna. "
             if ref_avg_val > 4.5:
                 card_reason += f"En starkt bidragande faktor är domaren {referee_name} som har en strikt nivå ({ref_avg_val:.1f} snitt), vilket höjer risken för kort avsevärt. "
@@ -330,7 +326,7 @@ if df is not None:
                 card_reason += "Noterbart är att tidigare möten mellan dessa lag har varit hetare än deras vanliga ligamatcher, vilket vår modell har justerat för."
             conclusion_paragraphs.append(card_reason)
 
-            # Hörnor-analys (Stycke 2)
+            # Hörnor-analys
             corner_reason = f"**🚩 Hörnor:** "
             total_corn_proj = h_corn_avg + a_corn_avg
             if total_corn_proj > 10.5:
@@ -341,7 +337,7 @@ if df is not None:
                 corner_reason += f"Hörnstatistiken ligger på en medelnivå ({total_corn_proj:.1f}), inga extrema avvikelser syns i datan."
             conclusion_paragraphs.append(corner_reason)
 
-            # Mål-analys (Stycke 3)
+            # Mål-analys
             goal_reason = f"**⚽ Målchanser:** "
             if btts_score > 2.6:
                 goal_reason += f"Båda lagen visar fin offensiv form samtidigt som försvaren läcker. BLGM (Båda lagen gör mål) ser statistiskt starkt ut."
