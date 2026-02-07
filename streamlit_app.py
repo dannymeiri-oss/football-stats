@@ -57,12 +57,13 @@ def load_data(url):
         return data
     except: return None
 
+# --- API ODDS FETCHING ---
 @st.cache_data(ttl=600)
 def get_odds_by_fixture_id(fixture_id):
     """Fetches odds directly via fixture_id from API-Football."""
     res = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
     
-    if not fixture_id or str(fixture_id) in ["0", "0.0", "nan"]: 
+    if not fixture_id or str(fixture_id) in ["0", "0.0", "nan"]:
         return res
 
     headers = {
@@ -71,68 +72,66 @@ def get_odds_by_fixture_id(fixture_id):
     }
     
     try:
-        # Convert ID to string integer (e.g. "123456")
         fid = str(int(float(fixture_id)))
         url = f"{API_BASE_URL}/odds?fixture={fid}"
         
         r = requests.get(url, headers=headers, timeout=5)
         data = r.json()
         
-        if not data.get('response') or len(data['response']) == 0: 
+        if not data.get('response') or len(data['response']) == 0:
             return res
             
         bookmakers = data['response'][0].get('bookmakers', [])
-        if not bookmakers: 
-            return res
+        if not bookmakers: return res
         
-        # 1. Find Bet365 (ID 1) primarily, otherwise take the first available
-        target_bookie = None
-        for b in bookmakers:
-            if b['id'] == 1:
-                target_bookie = b
-                break
-        if not target_bookie:
-            target_bookie = bookmakers[0]
+        # Prioritize Bet365 (ID 1)
+        bookie = next((b for b in bookmakers if b['id'] == 1), bookmakers[0])
         
-        # 2. Look for odds with exact strings
-        for bet in target_bookie.get('bets', []):
+        for bet in bookie.get('bets', []):
             
-            # BLGM (ID 8)
+            # --- 1. BLGM (ID 8) ---
             if bet['id'] == 8:
                 for v in bet['values']:
                     if v['value'] == "Yes": 
                         res["btts"] = v['odd']
             
-            # CORNERS (ID 15)
+            # --- 2. CORNERS (ID 15) ---
             if bet['id'] == 15:
-                # Create a simple lookup table: "Over 11.5" -> 2.50
-                odds_map = {item['value']: item['odd'] for item in bet['values']}
+                # Gather all "Over" odds into a dictionary
+                over_lines = {v['value']: v['odd'] for v in bet['values'] if "Over" in v['value']}
                 
-                # Priority order
-                if "Over 11.5" in odds_map:
-                    res["corners"] = f"{odds_map['Over 11.5']} (Ö11.5)"
-                elif "Over 10.5" in odds_map:
-                    res["corners"] = f"{odds_map['Over 10.5']} (Ö10.5)"
-                elif "Over 9.5" in odds_map:
-                    res["corners"] = f"{odds_map['Over 9.5']} (Ö9.5)"
-                elif "Over 8.5" in odds_map:
-                    res["corners"] = f"{odds_map['Over 8.5']} (Ö8.5)"
-                elif "Over 12.5" in odds_map:
-                    res["corners"] = f"{odds_map['Over 12.5']} (Ö12.5)"
+                # Try to find specific lines in order, otherwise take first available
+                if "Over 11.5" in over_lines:
+                    res["corners"] = f"{over_lines['Over 11.5']} (Ö11.5)"
+                elif "Over 10.5" in over_lines:
+                    res["corners"] = f"{over_lines['Over 10.5']} (Ö10.5)"
+                elif "Over 9.5" in over_lines:
+                    res["corners"] = f"{over_lines['Over 9.5']} (Ö9.5)"
+                elif "Over 8.5" in over_lines:
+                    res["corners"] = f"{over_lines['Over 8.5']} (Ö8.5)"
+                elif len(over_lines) > 0:
+                    # Fallback: Take the first key we find
+                    first_key = list(over_lines.keys())[0]
+                    res["corners"] = f"{over_lines[first_key]} ({first_key.replace('Over ', 'Ö')})"
 
-            # CARDS (ID 45)
+            # --- 3. CARDS (ID 45) ---
             if bet['id'] == 45:
-                card_map = {item['value']: item['odd'] for item in bet['values']}
+                # Gather all "Over" odds
+                card_lines = {v['value']: v['odd'] for v in bet['values'] if "Over" in v['value']}
                 
-                # Priority order for cards
-                if "Over 3.5" in card_map:
-                    res["cards"] = f"{card_map['Over 3.5']} (Ö3.5)"
-                elif "Over 4.5" in card_map:
-                    res["cards"] = f"{card_map['Over 4.5']} (Ö4.5)"
-                elif "Over 2.5" in card_map:
-                    res["cards"] = f"{card_map['Over 2.5']} (Ö2.5)"
-                elif "Over 5.5" in card_map:
-                    res["cards"] = f"{card_map['Over 5.5']} (Ö5.5)"
+                # Priority for cards
+                if "Over 3.5" in card_lines:
+                    res["cards"] = f"{card_lines['Over 3.5']} (Ö3.5)"
+                elif "Over 4.5" in card_lines:
+                    res["cards"] = f"{card_lines['Over 4.5']} (Ö4.5)"
+                elif "Over 2.5" in card_lines:
+                    res["cards"] = f"{card_lines['Over 2.5']} (Ö2.5)"
+                elif "Over 5.5" in card_lines:
+                    res["cards"] = f"{card_lines['Over 5.5']} (Ö5.5)"
+                elif len(card_lines) > 0:
+                    # Fallback
+                    first_key = list(card_lines.keys())[0]
+                    res["cards"] = f"{card_lines[first_key]} ({first_key.replace('Over ', 'Ö')})"
 
     except Exception as e:
         res["debug"] = str(e)
@@ -229,7 +228,6 @@ def clean_stats(data):
         if col not in data.columns: data[col] = 0.0
         else:
             if col == 'response.fixture.id':
-                # Convert fixture ID to numeric, fill NaNs with 0
                 data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
             else:
                 data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
@@ -308,7 +306,6 @@ if df is not None:
             
             # --- GET ODDS (NEW FUNCTION) ---
             odds_data = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
-            # Only fetch if match is upcoming (NS) and has an ID
             if m['response.fixture.status.short'] == 'NS' and 'response.fixture.id' in m:
                 odds_data = get_odds_by_fixture_id(m['response.fixture.id'])
 
