@@ -4,7 +4,7 @@ import numpy as np
 import requests
 from datetime import datetime, timedelta
 
-# --- 1. KONFIGURATION (PERFEKT LAYOUT - RÖR EJ) ---
+# --- 1. CONFIGURATION (PERFECT LAYOUT - DO NOT TOUCH) ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
 st.markdown("""
@@ -17,18 +17,18 @@ st.markdown("""
     .match-row { background: white; padding: 10px; border-radius: 8px; border: 1px solid #eee; margin-bottom: 5px; display: flex; align-items: center; }
     .pos-tag { font-size: 0.75rem; color: #888; font-weight: bold; margin: 0 4px; padding: 1px 4px; background: #f0f0f0; border-radius: 3px; }
     
-    /* H2H & ANALYS DESIGN */
+    /* H2H & ANALYSIS DESIGN */
     .stat-label-centered { color: #888; font-weight: bold; font-size: 0.75rem; text-transform: uppercase; text-align: center; margin-top: 15px; }
     .stat-comparison { display: flex; justify-content: center; align-items: center; gap: 20px; font-size: 1.6rem; font-weight: bold; color: black; }
     
-    /* SEKTIONER LAGANALYS & DOMARE */
+    /* SECTIONS TEAM ANALYSIS & REFEREE */
     .section-header { text-align: center; padding: 8px; background: #222; color: white; border-radius: 5px; margin: 20px 0 15px 0; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
     .total-header { text-align: center; padding: 5px; color: #444; font-weight: bold; margin-bottom: 10px; border-bottom: 2px solid #eee; }
     
-    /* DOMARE INFO I H2H */
+    /* REFEREE INFO IN H2H */
     .referee-box { text-align: center; background: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #ddd; margin-bottom: 20px; font-weight: bold; }
 
-    /* NY CSS FÖR AI PREDICTIONS & ODDS */
+    /* NEW CSS FOR AI PREDICTIONS & ODDS */
     .bet-box { padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; font-size: 0.9rem; }
     .good-bet { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
     .bad-bet { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
@@ -40,15 +40,15 @@ st.markdown("""
 
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
 
-# API CONFIG
-API_KEY = "6343cd4636523af501b585a1b595ad26"
-API_BASE_URL = "https://v3.football.api-sports.io"
-
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
 STANDINGS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=712668345"
 
-# --- 2. DATAHANTERING ---
+# API CONFIG
+API_KEY = "6343cd4636523af501b585a1b595ad26"
+API_BASE_URL = "https://v3.football.api-sports.io"
+
+# --- 2. DATA HANDLING ---
 @st.cache_data(ttl=60)
 def load_data(url):
     try:
@@ -57,31 +57,35 @@ def load_data(url):
         return data
     except: return None
 
-# --- API ODDS HÄMTNING ---
 @st.cache_data(ttl=600)
 def get_odds_by_fixture_id(fixture_id):
-    """Hämtar odds direkt via fixture_id från API-Football med enkel exakt matchning."""
+    """Fetches odds directly via fixture_id from API-Football."""
     res = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
     
-    # 1. Validera ID
-    if not fixture_id or str(fixture_id) in ["0", "0.0", "nan"]: return res
+    if not fixture_id or str(fixture_id) in ["0", "0.0", "nan"]: 
+        return res
 
-    headers = {'x-rapidapi-host': "v3.football.api-sports.io", 'x-apisports-key': API_KEY}
+    headers = {
+        'x-rapidapi-host': "v3.football.api-sports.io",
+        'x-apisports-key': API_KEY
+    }
     
     try:
-        # Konvertera ID till ren sträng (t.ex "123456")
+        # Convert ID to string integer (e.g. "123456")
         fid = str(int(float(fixture_id)))
         url = f"{API_BASE_URL}/odds?fixture={fid}"
         
         r = requests.get(url, headers=headers, timeout=5)
         data = r.json()
         
-        if not data.get('response') or len(data['response']) == 0: return res
+        if not data.get('response') or len(data['response']) == 0: 
+            return res
             
         bookmakers = data['response'][0].get('bookmakers', [])
-        if not bookmakers: return res
+        if not bookmakers: 
+            return res
         
-        # 2. Hitta Bet365 (ID 1) i första hand, annars ta första bästa
+        # 1. Find Bet365 (ID 1) primarily, otherwise take the first available
         target_bookie = None
         for b in bookmakers:
             if b['id'] == 1:
@@ -90,7 +94,7 @@ def get_odds_by_fixture_id(fixture_id):
         if not target_bookie:
             target_bookie = bookmakers[0]
         
-        # 3. Leta efter odds med exakta strängar (Ingen "smart" logik som kan fela)
+        # 2. Look for odds with exact strings
         for bet in target_bookie.get('bets', []):
             
             # BLGM (ID 8)
@@ -99,12 +103,12 @@ def get_odds_by_fixture_id(fixture_id):
                     if v['value'] == "Yes": 
                         res["btts"] = v['odd']
             
-            # HÖRNOR (ID 15) - Leta efter specifika nycklar
+            # CORNERS (ID 15)
             if bet['id'] == 15:
-                # Skapa en enkel uppslagstabell: "Over 11.5" -> 2.50
+                # Create a simple lookup table: "Over 11.5" -> 2.50
                 odds_map = {item['value']: item['odd'] for item in bet['values']}
                 
-                # Prioritetsordning: Vilken lina vill vi helst visa?
+                # Priority order
                 if "Over 11.5" in odds_map:
                     res["corners"] = f"{odds_map['Over 11.5']} (Ö11.5)"
                 elif "Over 10.5" in odds_map:
@@ -116,11 +120,11 @@ def get_odds_by_fixture_id(fixture_id):
                 elif "Over 12.5" in odds_map:
                     res["corners"] = f"{odds_map['Over 12.5']} (Ö12.5)"
 
-            # KORT (ID 45) - Leta efter specifika nycklar
+            # CARDS (ID 45)
             if bet['id'] == 45:
                 card_map = {item['value']: item['odd'] for item in bet['values']}
                 
-                # Prioritetsordning för kort
+                # Priority order for cards
                 if "Over 3.5" in card_map:
                     res["cards"] = f"{card_map['Over 3.5']} (Ö3.5)"
                 elif "Over 4.5" in card_map:
@@ -225,6 +229,7 @@ def clean_stats(data):
         if col not in data.columns: data[col] = 0.0
         else:
             if col == 'response.fixture.id':
+                # Convert fixture ID to numeric, fill NaNs with 0
                 data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
             else:
                 data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
@@ -285,14 +290,14 @@ if df is not None:
             h_card_avg = get_rolling_card_avg(h_team, df, n=20)
             a_card_avg = get_rolling_card_avg(a_team, df, n=20)
             
-            # Statistikrad 1
+            # Stat Row 1
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Mål snitt (L20)", round(h_hist['response.goals.home'].mean() + a_hist['response.goals.away'].mean(), 2) if not h_hist.empty else "N/A")
             m2.metric("xG snitt (L20)", round(h_hist['xG Hemma'].mean() + a_hist['xG Borta'].mean(), 2) if not h_hist.empty else "N/A")
             m3.metric("Hörnor snitt (L20)", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt (L20)", round(h_card_avg + a_card_avg, 1) if not h_hist.empty else "N/A")
             
-            # Statistikrad 2 (ODDS OCH DOMARE)
+            # Stat Row 2 (ODDS & REFEREE)
             ref_avg_val = 0.0
             display_ref = "N/A"
             if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
@@ -301,8 +306,9 @@ if df is not None:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
                     display_ref = f"{ref_avg_val:.2f}"
             
-            # --- HÄMTA ODDS (NY FUNKTION) ---
+            # --- GET ODDS (NEW FUNCTION) ---
             odds_data = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
+            # Only fetch if match is upcoming (NS) and has an ID
             if m['response.fixture.status.short'] == 'NS' and 'response.fixture.id' in m:
                 odds_data = get_odds_by_fixture_id(m['response.fixture.id'])
 
@@ -315,7 +321,7 @@ if df is not None:
             # --- AI PREDICTIONS ---
             st.markdown("<div class='section-header'>🤖 DEEP STATS AI PREDICTION (L20)</div>", unsafe_allow_html=True)
             
-            # 1. KORT & INTENSITET
+            # 1. CARDS & INTENSITY
             h2h_past = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
                           ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
             h2h_past = h2h_past[h2h_past['response.fixture.status.short'] == 'FT']
@@ -326,7 +332,7 @@ if df is not None:
             h_card_pred = (h_card_avg * 0.6) + (ref_calc * 0.2) + (derby_boost / 2)
             a_card_pred = (a_card_avg * 0.6) + (ref_calc * 0.2) + (derby_boost / 2)
 
-            # 2. HÖRNOR
+            # 2. CORNERS
             h_corn_avg = get_rolling_corner_avg(h_team, df, n=20)
             a_corn_avg = get_rolling_corner_avg(a_team, df, n=20)
             
@@ -337,10 +343,10 @@ if df is not None:
             btts_pred_text = "JA (Troligt)" if btts_score > 2.0 else "NEJ"
             btts_color = "green" if btts_score > 2.0 else "red"
 
-            # 4. TEXT-SLUTSATS GENERERING
+            # 4. TEXT CONCLUSION GENERATION
             conclusion_paragraphs = []
             
-            # Kort-analys (Stycke 1)
+            # Card Analysis (Para 1)
             card_reason = f"**🟨 Kort & Intensitet:** Modellens prognos på **{total_cards_pred:.1f} kort** baseras på att {h_team} snittar {h_card_avg:.1f} och {a_team} {a_card_avg:.1f} kort de senaste 20 matcherna. "
             if ref_avg_val > 4.5:
                 card_reason += f"En starkt bidragande faktor är domaren {referee_name} som har en strikt nivå ({ref_avg_val:.1f} snitt), vilket höjer risken för kort avsevärt. "
@@ -350,7 +356,7 @@ if df is not None:
                 card_reason += "Noterbart är att tidigare möten mellan dessa lag har varit hetare än deras vanliga ligamatcher, vilket vår modell har justerat för."
             conclusion_paragraphs.append(card_reason)
 
-            # Hörnor-analys (Stycke 2)
+            # Corner Analysis (Para 2)
             corner_reason = f"**🚩 Hörnor:** "
             total_corn_proj = h_corn_avg + a_corn_avg
             if total_corn_proj > 10.5:
@@ -361,7 +367,7 @@ if df is not None:
                 corner_reason += f"Hörnstatistiken ligger på en medelnivå ({total_corn_proj:.1f}), inga extrema avvikelser syns i datan."
             conclusion_paragraphs.append(corner_reason)
 
-            # Mål-analys (Stycke 3)
+            # Goal Analysis (Para 3)
             goal_reason = f"**⚽ Målchanser:** "
             if btts_score > 2.6:
                 goal_reason += f"Båda lagen visar fin offensiv form samtidigt som försvaren läcker. BLGM (Båda lagen gör mål) ser statistiskt starkt ut."
@@ -373,13 +379,13 @@ if df is not None:
 
             final_conclusion_html = "<br><br>".join(conclusion_paragraphs)
 
-            # VISUALISERING
+            # VISUALIZATION
             c1, c2, c3 = st.columns(3)
             c1.metric("Hemmalag (xCards)", f"{h_card_pred:.2f}")
             c2.metric("TOTALT (xCards)", f"{total_cards_pred:.2f}")
             c3.metric("Bortalag (xCards)", f"{a_card_pred:.2f}")
             
-            # Kort-boxar
+            # Card Boxes
             col_b1, col_b2 = st.columns(2)
             with col_b1:
                 st.markdown(f"<div class='odds-label'>Marknads Odds</div><div class='odds-value'>{odds_data['cards']}</div>", unsafe_allow_html=True)
@@ -392,7 +398,7 @@ if df is not None:
 
             stat_comparison_row("AI HÖRNOR PREDIKTION", h_corn_avg, a_corn_avg)
             
-            # Hörn-boxar
+            # Corner Boxes
             col_c1, col_c2 = st.columns(2)
             with col_c1:
                 st.markdown(f"<div class='odds-label'>Marknads Odds</div><div class='odds-value'>{odds_data['corners']}</div>", unsafe_allow_html=True)
@@ -402,10 +408,10 @@ if df is not None:
                 if a_corn_avg >= 5.5: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
 
-            # BLGM RAD
+            # BLGM ROW
             st.markdown(f"<div style='text-align:center; font-weight:bold; margin-top: 15px;'>BÅDA LAGEN GÖR MÅL (BLGM)? <span style='color:{btts_color}; font-size:1.2em;'>{btts_pred_text}</span></div>", unsafe_allow_html=True)
 
-            # Slutsats Textruta (Längst ner i sektionen)
+            # Conclusion Text Box (At the bottom of the section)
             st.markdown(f"<div class='ai-text-box'><b>🎙️ AI-Analys & Slutsats:</b><br><br>{final_conclusion_html}</div>", unsafe_allow_html=True)
             # --- AI END ---
 
