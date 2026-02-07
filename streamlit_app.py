@@ -45,11 +45,13 @@ def load_data(url):
     except: return None
 
 def get_team_pos(team_name, league_name, standings):
+    """ Hämtar position (#) för ett lag baserat på lag och liga från standings-sheetet. """
     if standings is None or team_name is None: return ""
     try:
         league_col = standings.columns[0]
         pos_col = standings.columns[1]
         team_col = standings.columns[2]
+        
         row = standings[(standings[league_col].astype(str) == str(league_name)) & 
                         (standings[team_col].astype(str) == str(team_name))]
         if not row.empty:
@@ -111,27 +113,6 @@ def stat_comparison_row(label, x1, x2, is_pct=False, precision=2):
     v2 = "N/A" if pd.isna(x2) else (f"{x2:.{precision}f}" if precision > 0 else f"{int(x2)}")
     st.markdown(f"<div class='stat-comparison'><div style='flex:1; text-align:right;'>{v1}{suffix}</div><div style='color:#ccc; margin:0 10px;'>|</div><div style='flex:1; text-align:left;'>{v2}{suffix}</div></div>", unsafe_allow_html=True)
 
-def render_match_row_html(r, standings_df):
-    """ Hjälpfunktion för att rendera en match-rad i 'Matchcenter-stil' """
-    h_name, a_name = r['response.teams.home.name'], r['response.teams.away.name']
-    l_name = r['response.league.name']
-    h_pos = get_team_pos(h_name, l_name, standings_df)
-    a_pos = get_team_pos(a_name, l_name, standings_df)
-    score = f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}"
-    
-    return f"""
-        <div class="match-row">
-            <div style="width:100px; font-size:0.75em; color:gray;">{r['Speltid']}</div>
-            <div style="flex:1; text-align:right; font-weight:bold; font-size:0.9em;">
-                <span class="pos-tag">{h_pos}</span> {h_name} 
-            </div>
-            <div style="background:#222; color:white; padding:1px 8px; margin:0 8px; border-radius:4px; min-width:40px; text-align:center; font-size:0.85em;">{score}</div>
-            <div style="flex:1; text-align:left; font-weight:bold; font-size:0.9em;">
-                {a_name} <span class="pos-tag">{a_pos}</span>
-            </div>
-        </div>
-    """
-
 # --- 3. LAYOUT ---
 if df is not None:
     if st.session_state.view_mode in ["match_detail", "h2h_detail"]:
@@ -143,6 +124,8 @@ if df is not None:
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
         l_name = m['response.league.name']
         referee_name = m['ref_clean']
+        
+        # Hämtar positioner för headern
         h_pos = get_team_pos(h_team, l_name, standings_df)
         a_pos = get_team_pos(a_team, l_name, standings_df)
 
@@ -170,44 +153,37 @@ if df is not None:
         if st.session_state.view_mode == "h2h_detail":
             h_hist = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
             a_hist = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Mål snitt", round(h_hist['response.goals.home'].mean() + a_hist['response.goals.away'].mean(), 2) if not h_hist.empty else "N/A")
+            m2.metric("xG snitt", round(h_hist['xG Hemma'].mean() + a_hist['xG Borta'].mean(), 2) if not h_hist.empty else "N/A")
+            m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
+            m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else "N/A")
             
-            # --- DOMARE (ÖVERST ENLIGT INSTRUKTION) ---
             if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
-                ref_avg = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10) if not ref_last_10.empty else 0
-                st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Snitt Gula Kort (Senaste 10): {ref_avg:.2f}</div>", unsafe_allow_html=True)
+                if not ref_last_10.empty:
+                    ref_avg = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
+                    st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Snitt Gula Kort (Senaste 10): {ref_avg:.2f}</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Ingen historik hittad</div>", unsafe_allow_html=True)
             else:
                 st.markdown("<div class='referee-box'>⚖️ Domare: Okänd</div>", unsafe_allow_html=True)
 
             st.markdown("<h3 style='text-align:center; margin-top:20px; color:#333;'>SEASON AVERAGES COMPARISON</h3>", unsafe_allow_html=True)
             stat_comparison_row("MÅL / MATCH", h_hist['response.goals.home'].mean(), a_hist['response.goals.away'].mean())
             stat_comparison_row("EXPECTED GOALS (XG)", h_hist['xG Hemma'].mean(), a_hist['xG Borta'].mean())
-            stat_comparison_row("BOLLINNEHAV", h_hist['Bollinnehav Hemma'].mean(), a_hist['Bollinnehav Borta'].mean(), is_pct=True, precision=0)
+            stat_comparison_row("BOLLINNEHAV", h_hist['Bollinnehav Hemma'].mean(), h_hist['Bollinnehav Borta'].mean(), is_pct=True, precision=0)
             stat_comparison_row("HÖRNOR / MATCH", h_hist['Hörnor Hemma'].mean(), a_hist['Hörnor Borta'].mean(), precision=1)
             stat_comparison_row("GULA KORT / MATCH", h_hist['Gula kort Hemma'].mean(), a_hist['Gula Kort Borta'].mean(), precision=1)
+            stat_comparison_row("RÖDA KORT / MATCH", h_hist['Röda kort Hemma'].mean(), h_hist['Röda kort Borta'].mean(), precision=2)
             
-            st.markdown("---")
-            
-            # --- SENASTE 10 MATCHER (SAMMA DESIGN SOM MATCHCENTER) ---
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown(f"<div class='total-header'>SENASTE 10: {h_team}</div>", unsafe_allow_html=True)
-                h_l10 = df[((df['response.teams.home.name'] == h_team) | (df['response.teams.away.name'] == h_team)) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
-                for _, r in h_l10.iterrows():
-                    st.markdown(render_match_row_html(r, standings_df), unsafe_allow_html=True)
-            
-            with c2:
-                st.markdown(f"<div class='total-header'>SENASTE 10: {a_team}</div>", unsafe_allow_html=True)
-                a_l10 = df[((df['response.teams.home.name'] == a_team) | (df['response.teams.away.name'] == a_team)) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
-                for _, r in a_l10.iterrows():
-                    st.markdown(render_match_row_html(r, standings_df), unsafe_allow_html=True)
-
             st.markdown("<br>### ⚔️ Senaste inbördes möten", unsafe_allow_html=True)
             h2h = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
                      ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
             h2h = h2h[h2h['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
-            for _, r in h2h.iterrows():
-                st.markdown(render_match_row_html(r, standings_df), unsafe_allow_html=True)
+            if not h2h.empty:
+                h2h_display = h2h.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
+                st.dataframe(h2h_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
 
         elif st.session_state.view_mode == "match_detail":
             st.markdown("<h2 style='text-align:center; color:#ddd; margin-bottom:20px;'>MATCH STATISTICS</h2>", unsafe_allow_html=True)
@@ -260,8 +236,169 @@ if df is not None:
 
         with tab2:
             st.header("🛡️ Laganalys")
-            # Behåll din befintliga kod för tab2 här...
-            # (Jag har inte ändrat något i tab2, tab3, tab4, tab5 för att inte påverka din data)
+            all_teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
+            all_seasons = sorted(df['Säsong'].unique(), reverse=True)
+            f1, f2 = st.columns(2)
+            with f1: sel_team = st.selectbox("Välj lag:", all_teams, key="laganalys_team")
+            with f2: sel_season = st.selectbox("Välj säsong:", ["Alla"] + all_seasons, key="laganalys_season")
+            if sel_team:
+                team_df = df if sel_season == "Alla" else df[df['Säsong'] == sel_season]
+                h_df = team_df[(team_df['response.teams.home.name'] == sel_team) & (team_df['response.fixture.status.short'] == 'FT')]
+                a_df = team_df[(team_df['response.teams.away.name'] == sel_team) & (team_df['response.fixture.status.short'] == 'FT')]
+                tot_m = len(h_df) + len(a_df)
+                if tot_m > 0:
+                    st.markdown("<div class='total-header'>TOTAL PRESTATION (SNITT)</div>", unsafe_allow_html=True)
+                    t1, t2, t3, t4, t5, t6 = st.columns(6)
+                    t1.metric("Matcher", tot_m); t2.metric("Mål", round((h_df['response.goals.home'].sum() + a_df['response.goals.away'].sum())/tot_m, 2)); t3.metric("xG", round((h_df['xG Hemma'].sum() + a_df['xG Borta'].sum())/tot_m, 2)); t4.metric("Hörnor", round((h_df['Hörnor Hemma'].sum() + a_df['Hörnor Borta'].sum())/tot_m, 1)); t5.metric("Gula Kort", round((h_df['Gula kort Hemma'].sum() + a_df['Gula Kort Borta'].sum())/tot_m, 1)); t6.metric("Bollinnehav", f"{int((h_df['Bollinnehav Hemma'].sum() + a_df['Bollinnehav Borta'].sum())/tot_m)}%")
+                    
+                    col_h, col_a = st.columns(2)
+                    with col_h:
+                        st.markdown("<div class='section-header'>🏠 Hemma</div>", unsafe_allow_html=True)
+                        if not h_df.empty:
+                            c1, c2 = st.columns(2)
+                            c1.metric("Mål", round(h_df['response.goals.home'].mean(), 2)); c2.metric("xG", round(h_df['xG Hemma'].mean(), 2))
+                            c1.metric("Bollinnehav", f"{int(h_df['Bollinnehav Hemma'].mean())}%"); c2.metric("Hörnor", round(h_df['Hörnor Hemma'].mean(), 1))
+                            c1.metric("Gula Kort", round(h_df['Gula kort Hemma'].mean(), 1)); c2.metric("Röda Kort", round(h_df['Röda kort Hemma'].mean(), 2))
+                            c1.metric("Skott på mål", round(h_df['Skott på mål Hemma'].mean(), 1)); c2.metric("Passningar", int(h_df['Passningar totalt Hemma'].mean()))
+                            c1.metric("Offside", round(h_df['Offside Hemma'].mean(), 1)); c2.metric("Fouls", round(h_df['Fouls Hemma'].mean(), 1))
+                    with col_a:
+                        st.markdown("<div class='section-header'>✈️ Borta</div>", unsafe_allow_html=True)
+                        if not a_df.empty:
+                            c1, c2 = st.columns(2)
+                            c1.metric("Mål", round(a_df['response.goals.away'].mean(), 2)); c2.metric("xG", round(a_df['xG Borta'].mean(), 2))
+                            c1.metric("Bollinnehav", f"{int(a_df['Bollinnehav Borta'].mean())}%"); c2.metric("Hörnor", round(a_df['Hörnor Borta'].mean(), 1))
+                            c1.metric("Gula Kort", round(a_df['Gula Kort Borta'].mean(), 1)); c2.metric("Röda Kort", round(a_df['Röda kort Borta'].mean(), 2))
+                            c1.metric("Skott på mål", round(a_df['Skott på mål Borta'].mean(), 1)); c2.metric("Passningar", int(a_df['Passningar totalt Borta'].mean()))
+                            c1.metric("Offside", round(a_df['Offside Borta'].mean(), 1)); c2.metric("Fouls", round(a_df['Fouls Borta'].mean(), 1))
+                    
+                    st.divider(); st.subheader(f"📅 Senaste 10 matcher för {sel_team}")
+                    # HÄR ÄR DEN NYA DESIGNEN FÖR SENASTE 10 I LAGANALYS
+                    last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | (team_df['response.teams.away.name'] == sel_team)) & (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
+                    if not last_10.empty:
+                        for idx, r in last_10.iterrows():
+                            h_name, a_name = r['response.teams.home.name'], r['response.teams.away.name']
+                            l_name = r['response.league.name']
+                            h_pos = get_team_pos(h_name, l_name, standings_df)
+                            a_pos = get_team_pos(a_name, l_name, standings_df)
+                            
+                            col_info, col_btn = st.columns([4.5, 1.5])
+                            with col_info:
+                                score = f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}"
+                                st.markdown(f"""
+                                    <div class="match-row">
+                                        <div style="width:130px; font-size:0.8em; color:gray;">{r['Speltid']}</div>
+                                        <div style="flex:1; text-align:right; font-weight:bold;">
+                                            <span class="pos-tag">{h_pos}</span> {h_name} 
+                                            <img src="{r['response.teams.home.logo']}" width="20">
+                                        </div>
+                                        <div style="background:#222; color:white; padding:2px 10px; margin:0 10px; border-radius:4px; min-width:50px; text-align:center;">{score}</div>
+                                        <div style="flex:1; text-align:left; font-weight:bold;">
+                                            <img src="{r['response.teams.away.logo']}" width="20"> 
+                                            {a_name} <span class="pos-tag">{a_pos}</span>
+                                        </div>
+                                    </div>
+                                """, unsafe_allow_html=True)
+                            with col_btn:
+                                if st.button("Analys", key=f"btn_la_{idx}", use_container_width=True):
+                                    st.session_state.selected_match = r
+                                    st.session_state.view_mode = "match_detail"
+                                    st.rerun()
 
+        with tab3:
+            st.header("⚖️ Domaranalys")
+            refs = sorted([r for r in df['ref_clean'].unique() if r not in ["Domare: Okänd", "0", "Okänd", "nan"]])
+            rf1, rf2 = st.columns(2)
+            with rf1: sel_ref = st.selectbox("Välj domare:", ["Välj domare..."] + refs, key="domaranalys_ref")
+            with rf2: sel_ref_season = st.selectbox("Välj säsong för domare:", ["Alla"] + all_seasons, key="domaranalys_season")
+            if sel_ref != "Välj domare...":
+                ref_df = df if sel_ref_season == "Alla" else df[df['Säsong'] == sel_ref_season]
+                r_df = ref_df[ref_df['ref_clean'] == sel_ref]
+                if not r_df.empty:
+                    st.markdown(f"<div class='section-header'>Statistik för {sel_ref}</div>", unsafe_allow_html=True)
+                    m_count = len(r_df); gula_tot = r_df['Gula kort Hemma'].sum() + r_df['Gula Kort Borta'].sum()
+                    d1, d2 = st.columns(2)
+                    d1.metric("Antal Matcher", m_count); d2.metric("Gula Kort (Snitt)", round(gula_tot / m_count, 2) if m_count > 0 else 0)
+                    r_df_sorted = r_df.sort_values('datetime', ascending=False)
+                    st.dataframe(r_df_sorted[['Speltid', 'response.teams.home.name', 'response.teams.away.name', 'Gula kort Hemma', 'Gula Kort Borta']], use_container_width=True, hide_index=True)
+
+        with tab4:
+            st.header("🏆 Ligatabell")
+            if standings_df is not None:
+                liga_col = standings_df.columns[0]
+                available_leagues = sorted(standings_df[liga_col].dropna().unique().tolist())
+                sel_league_stand = st.selectbox("Välj liga:", available_leagues, key="stand_sel")
+                display_table = standings_df[standings_df[liga_col] == sel_league_stand].copy()
+                st.dataframe(display_table.iloc[:, 1:], use_container_width=True, hide_index=True)
+            else:
+                st.info("Ingen tabell hittades.")
+
+        with tab5:
+            st.header("📊 Topplista")
+            top_cat = st.radio("Välj kategori:", ["Lag", "Domare", "Heta Kortmatcher (Kommande)"], horizontal=True)
+            c1, c2 = st.columns(2)
+            with c1: num_matches = st.slider("Antal senaste matcher (Kriterium):", 1, 20, 5)
+            with c2: 
+                all_leagues = ["Alla"] + sorted(df['response.league.name'].unique().tolist()) if 'response.league.name' in df.columns else ["Alla"]
+                sel_league = st.selectbox("Välj liga:", all_leagues, key="top_league_filter")
+
+            filtered_df = df[df['response.fixture.status.short'] == 'FT']
+            if sel_league != "Alla":
+                filtered_df = filtered_df[filtered_df['response.league.name'] == sel_league]
+
+            if top_cat == "Lag":
+                team_stats = []
+                teams = sorted(pd.concat([filtered_df['response.teams.home.name'], filtered_df['response.teams.away.name']]).unique())
+                for t in teams:
+                    t_matches = filtered_df[(filtered_df['response.teams.home.name'] == t) | (filtered_df['response.teams.away.name'] == t)].sort_values('datetime', ascending=False)
+                    if len(t_matches) >= num_matches:
+                        recent = t_matches.head(num_matches)
+                        cards = [row['Gula kort Hemma'] if row['response.teams.home.name'] == t else row['Gula Kort Borta'] for _, row in recent.iterrows()]
+                        team_stats.append({'Lag': t, 'Snitt Kort': round(sum(cards)/len(cards), 2), 'Matcher': len(cards)})
+                if team_stats:
+                    st.dataframe(pd.DataFrame(team_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
+
+            elif top_cat == "Domare":
+                ref_stats = []
+                for r in filtered_df['ref_clean'].unique():
+                    if r in ["Domare: Okänd", "0", "Okänd", "nan"]: continue
+                    r_matches = filtered_df[filtered_df['ref_clean'] == r].sort_values('datetime', ascending=False)
+                    if len(r_matches) >= num_matches:
+                        recent = r_matches.head(num_matches)
+                        avg = (recent['Gula kort Hemma'].sum() + recent['Gula Kort Borta'].sum()) / len(recent)
+                        ref_stats.append({'Domare': r, 'Snitt Kort': round(avg, 2), 'Matcher': len(recent)})
+                if ref_stats:
+                    st.dataframe(pd.DataFrame(ref_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
+
+            else:
+                upcoming = df[df['response.fixture.status.short'] == 'NS'].sort_values('datetime', ascending=True)
+                now_check = datetime.now().replace(tzinfo=None)
+                end_check = now_check + timedelta(days=7)
+                upcoming = upcoming[(upcoming['datetime'] >= now_check) & (upcoming['datetime'] <= end_check)]
+                
+                if sel_league != "Alla":
+                    upcoming = upcoming[upcoming['response.league.name'] == sel_league]
+                
+                analysis_results = []
+                for _, row in upcoming.iterrows():
+                    h_team, a_team = row['response.teams.home.name'], row['response.teams.away.name']
+                    h_matches = filtered_df[(filtered_df['response.teams.home.name'] == h_team) | (filtered_df['response.teams.away.name'] == h_team)].sort_values('datetime', ascending=False).head(num_matches)
+                    h_avg = sum([r['Gula kort Hemma'] if r['response.teams.home.name'] == h_team else r['Gula Kort Borta'] for _, r in h_matches.iterrows()]) / len(h_matches) if not h_matches.empty else 0
+                    a_matches = filtered_df[(filtered_df['response.teams.home.name'] == a_team) | (filtered_df['response.teams.away.name'] == a_team)].sort_values('datetime', ascending=False).head(num_matches)
+                    a_avg = sum([r['Gula kort Hemma'] if r['response.teams.home.name'] == a_team else r['Gula Kort Borta'] for _, r in a_matches.iterrows()]) / len(a_matches) if not a_matches.empty else 0
+                    
+                    ref_avg_val = "N/A"
+                    if row['ref_clean'] not in ["Domare: Okänd", "0", "Okänd", "nan"]:
+                        r_matches = filtered_df[filtered_df['ref_clean'] == row['ref_clean']].sort_values('datetime', ascending=False).head(num_matches)
+                        if not r_matches.empty:
+                            ref_avg_val = round((r_matches['Gula kort Hemma'].sum() + r_matches['Gula Kort Borta'].sum()) / len(r_matches), 2)
+
+                    analysis_results.append({
+                        'Match': f"{h_team} vs {a_team}",
+                        'Kombinerat (Lagen)': round(h_avg + a_avg, 2),
+                        'Domare (Snitt)': ref_avg_val,
+                        'Liga': row['response.league.name']
+                    })
+                if analysis_results:
+                    st.dataframe(pd.DataFrame(analysis_results).sort_values('Kombinerat (Lagen)', ascending=False), use_container_width=True, hide_index=True)
 else:
     st.error("Kunde inte ladda data.")
