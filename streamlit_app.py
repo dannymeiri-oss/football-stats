@@ -27,13 +27,13 @@ st.markdown("""
     /* DOMARE INFO I H2H */
     .referee-box { text-align: center; background: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #ddd; margin-bottom: 20px; font-weight: bold; }
 
-    /* NY CSS FÖR AI PREDICTIONS */
+    /* NY CSS FÖR AI PREDICTIONS & ODDS */
     .bet-box { padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; font-size: 0.9rem; }
     .good-bet { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
     .bad-bet { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-    .ai-text-box { background-color: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196F3; margin: 15px 0; font-style: italic; color: #333; font-size: 0.95rem; line-height: 1.6; }
     .odds-label { font-size: 0.8rem; color: #666; margin-bottom: 2px; text-transform: uppercase; }
     .odds-value { font-size: 1.1rem; font-weight: bold; color: #2e7d32; }
+    .ai-text-box { background-color: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196F3; margin: 15px 0; font-style: italic; color: #333; font-size: 0.95rem; line-height: 1.6; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -93,7 +93,6 @@ def get_rolling_corner_avg(team_name, full_df, n=20):
     return sum(corners) / len(corners)
 
 def get_rolling_goals_stats(team_name, full_df, n=20):
-    # Returnerar (Gjorda mål snitt, Insläppta mål snitt)
     team_matches = full_df[((full_df['response.teams.home.name'] == team_name) | 
                             (full_df['response.teams.away.name'] == team_name)) & 
                            (full_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(n)
@@ -199,14 +198,14 @@ if df is not None:
             h_card_avg = get_rolling_card_avg(h_team, df, n=20)
             a_card_avg = get_rolling_card_avg(a_team, df, n=20)
             
-            # --- STATISTIKRAD 1 ---
+            # Statistikrad 1
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Mål snitt (L20)", round(h_hist['response.goals.home'].mean() + a_hist['response.goals.away'].mean(), 2) if not h_hist.empty else "N/A")
             m2.metric("xG snitt (L20)", round(h_hist['xG Hemma'].mean() + a_hist['xG Borta'].mean(), 2) if not h_hist.empty else "N/A")
             m3.metric("Hörnor snitt (L20)", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt (L20)", round(h_card_avg + a_card_avg, 1) if not h_hist.empty else "N/A")
             
-            # --- STATISTIKRAD 2 (ODDS OCH DOMARE) ---
+            # Statistikrad 2 (ODDS OCH DOMARE)
             ref_avg_val = 0.0
             display_ref = "N/A"
             if referee_name:
@@ -319,7 +318,7 @@ if df is not None:
             # BLGM RAD
             st.markdown(f"<div style='text-align:center; font-weight:bold; margin-top: 15px;'>BÅDA LAGEN GÖR MÅL (BLGM)? <span style='color:{btts_color}; font-size:1.2em;'>{btts_pred_text}</span></div>", unsafe_allow_html=True)
 
-            # Slutsats Textruta
+            # Slutsats Textruta (Längst ner i sektionen)
             st.markdown(f"<div class='ai-text-box'><b>🎙️ AI-Analys & Slutsats:</b><br><br>{final_conclusion_html}</div>", unsafe_allow_html=True)
             # --- AI END ---
 
@@ -332,8 +331,11 @@ if df is not None:
             stat_comparison_row("RÖDA KORT / MATCH", h_hist['Röda kort Hemma'].mean(), h_hist['Röda kort Borta'].mean(), precision=2)
             
             st.markdown("<br>### ⚔️ Senaste inbördes möten", unsafe_allow_html=True)
-            if not h2h_past.empty:
-                h2h_display = h2h_past.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
+            h2h = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
+                     ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
+            h2h = h2h[h2h['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
+            if not h2h.empty:
+                h2h_display = h2h.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
                 st.dataframe(h2h_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
 
         elif st.session_state.view_mode == "match_detail":
@@ -484,28 +486,8 @@ if df is not None:
                     m_count = len(r_df); gula_tot = r_df['Gula kort Hemma'].sum() + r_df['Gula Kort Borta'].sum()
                     d1, d2 = st.columns(2)
                     d1.metric("Antal Matcher", m_count); d2.metric("Gula Kort (Snitt)", round(gula_tot / m_count, 2) if m_count > 0 else 0)
-                    
-                    st.subheader("Matchhistorik - Gula Kort")
-                    r_df_sorted = r_df.sort_values('datetime', ascending=False)
-                    for idx_r, row_r in r_df_sorted.iterrows():
-                        h_c = row_r['Gula kort Hemma']
-                        a_c = row_r['Gula Kort Borta']
-                        h_col_style = "color: #28a745; font-weight: bold;" if h_c >= 2.0 else "color: black;"
-                        a_col_style = "color: #28a745; font-weight: bold;" if a_c >= 2.0 else "color: black;"
-                        
-                        st.markdown(f"""
-                            <div class="match-row">
-                                <div style="width:100px; font-size:0.8rem; color:gray;">{row_r['Speltid']}</div>
-                                <div style="flex:1; text-align:right;">{row_r['response.teams.home.name']}</div>
-                                <div style="margin:0 15px; background:#f0f0f0; padding:2px 10px; border-radius:4px; display:flex; gap:10px;">
-                                    <span style="{h_col_style}">{int(h_c)}</span>
-                                    <span style="color:#ccc;">-</span>
-                                    <span style="{a_col_style}">{int(a_c)}</span>
-                                </div>
-                                <div style="flex:1; text-align:left;">{row_r['response.teams.away.name']}</div>
-                                <div style="width:30px; text-align:center;">🟨</div>
-                            </div>
-                        """, unsafe_allow_html=True)
+                    for idx_r, row_r in r_df.sort_values('datetime', ascending=False).iterrows():
+                        st.markdown(f"<div class='match-row'>{row_r['Speltid']} | {row_r['response.teams.home.name']} {int(row_r['Gula kort Hemma'])}-{int(row_r['Gula Kort Borta'])} {row_r['response.teams.away.name']}</div>", unsafe_allow_html=True)
         with tab4:
             st.header("🏆 Ligatabell")
             if standings_df is not None:
@@ -514,7 +496,6 @@ if df is not None:
                 sel_league_stand = st.selectbox("Välj liga:", available_leagues, key="stand_sel")
                 display_table = standings_df[standings_df[liga_col] == sel_league_stand].copy()
                 st.dataframe(display_table.iloc[:, 1:], use_container_width=True, hide_index=True)
-            else: st.info("Ingen tabell hittades.")
         with tab5:
             st.header("📊 Topplista")
             top_cat = st.radio("Välj kategori:", ["Lag", "Domare", "Heta Kortmatcher (Kommande)"], horizontal=True)
