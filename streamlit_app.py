@@ -2,99 +2,102 @@ import streamlit as st
 import pandas as pd
 
 # --- PERFECT LAYOUT - RÖR EJ ---
-# Version: 2026-02-07 (Korrigerad)
+# Version: 2026-02-07
+# Syfte: Exakt tabell-design för Senaste 10 matcher + Domarinformation.
 
 def format_last_10_table(df, team_name):
     """
-    Skapar en exakt kopia av tabell-designen i din bild.
+    Skapar en snygg tabell baserat på användarens bild.
+    Kolumner: Speltid, Hemmalag, H, B, Bortalag.
     """
     if df.empty:
-        return "<p style='color: gray; padding: 20px;'>Ingen statistik tillgänglig för tillfället.</p>"
+        return "<p style='color: gray; padding: 10px;'>Ingen statistik tillgänglig.</p>"
 
-    # HTML och CSS för att matcha bilden (image_0fdc1e.png)
-    html = f"""
-    <div style="margin-bottom: 25px; font-family: 'Source Sans Pro', sans-serif;">
-        <h3 style="margin-bottom: 15px; font-size: 1.4rem; color: #31333F; display: flex; align-items: center;">
-            <span style="margin-right: 10px;">📅</span> Senaste 10 matcher för {team_name}
-        </h3>
-        <div style="border: 1px solid #e6e9ef; border-radius: 8px; overflow: hidden; background-color: white;">
-            <table style="width: 100%; border-collapse: collapse; text-align: left;">
-                <thead>
-                    <tr style="background-color: #f8f9fb; border-bottom: 1px solid #e6e9ef;">
-                        <th style="padding: 12px 15px; color: #666; font-weight: 400; font-size: 0.9rem; width: 20%;">Speltid</th>
-                        <th style="padding: 12px 15px; color: #666; font-weight: 400; font-size: 0.9rem; width: 35%;">Hemmalag</th>
-                        <th style="padding: 12px 15px; color: #666; font-weight: 400; font-size: 0.9rem; text-align: center; width: 5%;">H</th>
-                        <th style="padding: 12px 15px; color: #666; font-weight: 400; font-size: 0.9rem; text-align: center; width: 5%;">B</th>
-                        <th style="padding: 12px 15px; color: #666; font-weight: 400; font-size: 0.9rem; width: 35%;">Bortalag</th>
-                    </tr>
-                </thead>
-                <tbody>
+    # CSS för rundade hörn och ren design
+    table_style = """
+    <style>
+        .custom-table-container {
+            border: 1px solid #e6e9ef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            font-family: 'Source Sans Pro', sans-serif;
+        }
+        .custom-table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+        }
+        .custom-table thead {
+            background-color: #f8f9fb;
+            border-bottom: 1px solid #e6e9ef;
+        }
+        .custom-table th {
+            padding: 12px 10px;
+            color: #666;
+            font-weight: 500;
+            font-size: 14px;
+            text-align: left;
+        }
+        .custom-table td {
+            padding: 10px;
+            border-bottom: 1px solid #f0f2f6;
+            font-size: 14px;
+            color: #31333F;
+        }
+        .text-center { text-align: center !important; }
+        .score-col { font-weight: 600; width: 30px; }
+    </style>
     """
-    
+
+    html = table_style + f'<div class="custom-table-container">'
+    html += f'<div style="padding: 10px 15px; border-bottom: 1px solid #e6e9ef; font-weight: bold;">📅 Senaste 10 matcher för {team_name}</div>'
+    html += '<table class="custom-table"><thead><tr>'
+    html += '<th>Speltid</th><th>Hemmalag</th><th class="text-center">H</th><th class="text-center">B</th><th>Bortalag</th>'
+    html += '</tr></thead><tbody>'
+
     for _, row in df.iterrows():
         html += f"""
-                    <tr style="border-bottom: 1px solid #f0f2f6;">
-                        <td style="padding: 10px 15px; font-size: 0.9rem;">{row.get('date', '')}</td>
-                        <td style="padding: 10px 15px; font-size: 0.9rem;">{row.get('home_team', '')}</td>
-                        <td style="padding: 10px 15px; font-size: 0.9rem; text-align: center; font-weight: 500;">{row.get('home_score', 0)}</td>
-                        <td style="padding: 10px 15px; font-size: 0.9rem; text-align: center; font-weight: 500;">{row.get('away_score', 0)}</td>
-                        <td style="padding: 10px 15px; font-size: 0.9rem;">{row.get('away_team', '')}</td>
-                    </tr>
+        <tr>
+            <td style="width: 20%;">{row.get('date', '')}</td>
+            <td style="width: 35%;">{row.get('home_team', '')}</td>
+            <td class="text-center score-col">{row.get('home_score', 0)}</td>
+            <td class="text-center score-col">{row.get('away_score', 0)}</td>
+            <td style="width: 35%;">{row.get('away_team', '')}</td>
+        </tr>
         """
     
-    html += """
-                </tbody>
-            </table>
-        </div>
-    </div>
-    """
+    html += "</tbody></table></div>"
     return html
 
 def render_h2h_view(match_data):
     """
-    Huvudvy för H2H med domarinformation och tabeller.
+    Renderar vyn enligt instruktioner.
     """
-    # --- DOMARRAD (Enligt sparade instruktioner) ---
-    # Visas ovanför "SEASON AVERAGES COMPARISON"
+    # 1. Domarinformation (Ska ligga ovanför Season Averages)
     ref_name = match_data.get('referee', 'Okänd')
     ref_yellow = match_data.get('ref_avg_yellow', '-')
     
-    st.markdown("---")
-    if ref_name == "Okänd":
-        st.markdown(f"**Domare:** Okänd")
+    if ref_name == "Okänd" or not ref_name:
+        st.markdown("### Domare: Okänd")
     else:
-        st.markdown(f"👤 **Domare:** {ref_name} | **Gula kort (snitt senaste 10):** {ref_yellow}")
-    
+        # Visar namn och snitt gula kort
+        st.markdown(f"### 👤 Domare: {ref_name} | Gula kort (snitt): {ref_yellow}")
+
+    st.markdown("---")
     st.header("SEASON AVERAGES COMPARISON")
     
-    # Här renderas de två tabellerna sida vid sida
+    # 2. Tabeller för Senaste 10 matcher
     col1, col2 = st.columns(2)
     
     with col1:
         home_team = match_data.get('home_team_name', 'Hemmalag')
-        home_matches = match_data.get('home_last_10', pd.DataFrame())
-        st.markdown(format_last_10_table(home_matches, home_team), unsafe_allow_html=True)
+        home_df = match_data.get('home_last_10', pd.DataFrame())
+        st.markdown(format_last_10_table(home_df, home_team), unsafe_allow_html=True)
         
     with col2:
         away_team = match_data.get('away_team_name', 'Bortalag')
-        away_matches = match_data.get('away_last_10', pd.DataFrame())
-        st.markdown(format_last_10_table(away_matches, away_team), unsafe_allow_html=True)
+        away_df = match_data.get('away_last_10', pd.DataFrame())
+        st.markdown(format_last_10_table(away_df, away_team), unsafe_allow_html=True)
 
-# Exempel på hur man kör (Main-del)
-def main():
-    # Demo-data för att testa layouten
-    demo_data = {
-        'referee': 'Felix Zwayer',
-        'ref_avg_yellow': '4.2',
-        'home_team_name': '1. FC Heidenheim',
-        'away_team_name': 'Hamburger SV',
-        'home_last_10': pd.DataFrame([
-            {'date': '01 Feb 2026', 'home_team': 'Borussia Dortmund', 'home_score': 3, 'away_score': 2, 'away_team': '1. FC Heidenheim'},
-            {'date': '24 Jan 2026', 'home_team': '1. FC Heidenheim', 'home_score': 0, 'away_score': 3, 'away_team': 'RB Leipzig'},
-            {'date': '17 Jan 2026', 'home_team': 'VfL Wolfsburg', 'home_score': 1, 'away_score': 1, 'away_team': '1. FC Heidenheim'}
-        ])
-    }
-    render_h2h_view(demo_data)
-
-if __name__ == "__main__":
-    main()
+# --- SLUT PÅ PERFECT LAYOUT ---
