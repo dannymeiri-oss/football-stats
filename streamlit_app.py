@@ -25,6 +25,9 @@ st.markdown("""
     
     /* DOMARE INFO I H2H */
     .referee-box { text-align: center; background: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #ddd; margin-bottom: 20px; font-weight: bold; }
+    
+    /* POSITION BADGE */
+    .pos-badge { font-size: 0.8rem; color: #ffcc00; opacity: 0.9; font-weight: normal; margin-top: 2px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -83,6 +86,16 @@ def clean_stats(data):
     data['Speltid'] = data['datetime'].dt.strftime('%d %b %Y')
     return data
 
+def get_team_position(team_name, standings_df):
+    if standings_df is None or team_name is None: return "N/A"
+    try:
+        # Söker i alla kolumner efter lagnamnet för att hitta rätt rad
+        row = standings_df[standings_df.apply(lambda r: r.astype(str).str.contains(team_name, case=False).any(), axis=1)]
+        if not row.empty:
+            return str(row.iloc[0, 1]) # Kolumn B är index 1
+        return "N/A"
+    except: return "N/A"
+
 df = clean_stats(load_data(RAW_DATA_URL))
 standings_df = load_data(STANDINGS_URL)
 
@@ -107,13 +120,18 @@ if df is not None:
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
         referee_name = m['ref_clean']
         
+        # Hämta positioner för H2H-vyn
+        h_pos = get_team_position(h_team, standings_df)
+        a_pos = get_team_position(a_team, standings_df)
+        
         st.markdown(f"""
             <div style="background-color: #0e1117; padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 20px; border: 1px solid #333;">
                 <div style="color: #ffcc00; font-weight: bold; letter-spacing: 2px; font-size: 1.2rem;">{"FULL TIME" if m['response.fixture.status.short'] == 'FT' else "UPCOMING"}</div>
                 <div style="display: flex; justify-content: center; align-items: center; gap: 30px; margin-top: 15px;">
                     <div style="flex: 1; text-align: right;">
                         <img src="{m['response.teams.home.logo']}" width="60"><br>
-                        <span style="font-size: 1.1rem; font-weight: bold; color: white;">{h_team}</span>
+                        <span style="font-size: 1.1rem; font-weight: bold; color: white;">{h_team}</span><br>
+                        <div class="pos-badge">Position: {h_pos}</div>
                     </div>
                     <div style="display: flex; gap: 5px; align-items: center;">
                         <div style="background: #e63946; color: white; font-size: 2.5rem; padding: 5px 20px; border-radius: 5px; font-weight: bold;">{int(m['response.goals.home']) if m['response.fixture.status.short'] == 'FT' else 0}</div>
@@ -122,7 +140,8 @@ if df is not None:
                     </div>
                     <div style="flex: 1; text-align: left;">
                         <img src="{m['response.teams.away.logo']}" width="60"><br>
-                        <span style="font-size: 1.1rem; font-weight: bold; color: white;">{a_team}</span>
+                        <span style="font-size: 1.1rem; font-weight: bold; color: white;">{a_team}</span><br>
+                        <div class="pos-badge">Position: {a_pos}</div>
                     </div>
                 </div>
             </div>
@@ -153,7 +172,7 @@ if df is not None:
             stat_comparison_row("BOLLINNEHAV", h_hist['Bollinnehav Hemma'].mean(), a_hist['Bollinnehav Borta'].mean(), is_pct=True, precision=0)
             stat_comparison_row("HÖRNOR / MATCH", h_hist['Hörnor Hemma'].mean(), a_hist['Hörnor Borta'].mean(), precision=1)
             stat_comparison_row("GULA KORT / MATCH", h_hist['Gula kort Hemma'].mean(), a_hist['Gula Kort Borta'].mean(), precision=1)
-            stat_comparison_row("RÖDA KORT / MATCH", h_hist['Röda kort Hemma'].mean(), h_hist['Röda kort Borta'].mean(), precision=2)
+            stat_comparison_row("RÖDA KORT / MATCH", h_hist['Röda kort Hemma'].mean(), a_hist['Röda kort Borta'].mean(), precision=2)
             
             st.markdown("<br>### ⚔️ Senaste inbördes möten", unsafe_allow_html=True)
             h2h = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
@@ -209,15 +228,7 @@ if df is not None:
                 a_df = team_df[(team_df['response.teams.away.name'] == sel_team) & (team_df['response.fixture.status.short'] == 'FT')]
                 tot_m = len(h_df) + len(a_df)
                 if tot_m > 0:
-                    # HÄMTA TABELLPLACERING OM TILLGÄNGLIG
-                    league_pos = "N/A"
-                    if standings_df is not None:
-                        # Försöker hitta laget i tabellen
-                        pos_row = standings_df[standings_df.iloc[:, 2] == sel_team]
-                        if not pos_row.empty:
-                            league_pos = pos_row.iloc[0, 1] # Kolumn 1 brukar vara 'Rank'/'Pos'
-
-                    st.markdown(f"<div class='total-header'>TOTAL PRESTATION (SNITT) - TABELLPLACERING: {league_pos}</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='total-header'>TOTAL PRESTATION (SNITT)</div>", unsafe_allow_html=True)
                     t1, t2, t3, t4, t5, t6 = st.columns(6)
                     t1.metric("Matcher", tot_m); t2.metric("Mål", round((h_df['response.goals.home'].sum() + a_df['response.goals.away'].sum())/tot_m, 2)); t3.metric("xG", round((h_df['xG Hemma'].sum() + a_df['xG Borta'].sum())/tot_m, 2)); t4.metric("Hörnor", round((h_df['Hörnor Hemma'].sum() + a_df['Hörnor Borta'].sum())/tot_m, 1)); t5.metric("Gula Kort", round((h_df['Gula kort Hemma'].sum() + a_df['Gula Kort Borta'].sum())/tot_m, 1)); t6.metric("Bollinnehav", f"{int((h_df['Bollinnehav Hemma'].sum() + a_df['Bollinnehav Borta'].sum())/tot_m)}%")
                     
