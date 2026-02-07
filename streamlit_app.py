@@ -28,9 +28,9 @@ st.markdown("""
     .referee-box { text-align: center; background: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #ddd; margin-bottom: 20px; font-weight: bold; }
 
     /* NY CSS FÖR AI PREDICTIONS */
-    .bet-box { padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; font-size: 0.9rem; }
-    .good-bet { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-    .bad-bet { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .bet-box { padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; font-size: 0.9rem; color: #333; }
+    .good-bet { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+    .bad-bet { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -169,8 +169,9 @@ if df is not None:
             m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else "N/A")
             
-            # --- DOMARE & ANALYS ---
-            ref_avg_val = 4.0 # Default value if referee unknown
+            # Initiera variabel för domarsnitt (används i AI Prediction)
+            ref_avg_val = 4.0 # Baseline om domare saknas
+
             if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
@@ -181,27 +182,28 @@ if df is not None:
             else:
                 st.markdown("<div class='referee-box'>⚖️ Domare: Okänd</div>", unsafe_allow_html=True)
 
-            # --- AI CARD PREDICTIONS (INSATT HÄR) ---
-            st.markdown("<div class='section-header'>🤖 AI CARD PREDICTIONS</div>", unsafe_allow_html=True)
+            # --- HÄR STARTAR AI CARD PREDICTIONS ---
+            st.markdown("<div class='section-header'>AI CARD PREDICTIONS</div>", unsafe_allow_html=True)
             
             # Hämta lagens snitt
             h_card_avg = get_rolling_card_avg(h_team, df)
             a_card_avg = get_rolling_card_avg(a_team, df)
             
-            # Beräkna prediktion: (Lagsnitt + (Domarsnitt / 2)) / 2
+            # Beräkning: (Lagsnitt + (Domarsnitt / 2)) / 2
+            # Vi viktar domaren som "halva ekvationen" mot lagets snitt
             ref_weight = ref_avg_val / 2
             h_pred = (h_card_avg + ref_weight) / 2
             a_pred = (a_card_avg + ref_weight) / 2
             
             stat_comparison_row("AI FÖRVÄNTADE KORT", h_pred, a_pred)
             
-            ai_c1, ai_c2 = st.columns(2)
-            with ai_c1:
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
                 if h_pred >= 2.0:
                     st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<div class='bet-box bad-bet'>❌ INGET BRA SPEL PÅ {h_team}</div>", unsafe_allow_html=True)
-            with ai_c2:
+            with col_b2:
                 if a_pred >= 2.0:
                     st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
                 else:
@@ -356,6 +358,7 @@ if df is not None:
                                     st.session_state.selected_match = r
                                     st.session_state.view_mode = "match_detail"
                                     st.rerun()
+
         with tab3:
             st.header("⚖️ Domaranalys")
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["Domare: Okänd", "0", "Okänd", "nan"]])
@@ -393,6 +396,7 @@ if df is not None:
                                 <div style="width:30px; text-align:center;">🟨</div>
                             </div>
                         """, unsafe_allow_html=True)
+
         with tab4:
             st.header("🏆 Ligatabell")
             if standings_df is not None:
