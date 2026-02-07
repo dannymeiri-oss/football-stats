@@ -32,6 +32,8 @@ st.markdown("""
     .good-bet { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
     .bad-bet { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
     .ai-text-box { background-color: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196F3; margin: 15px 0; font-style: italic; color: #333; font-size: 0.95rem; line-height: 1.6; }
+    .odds-label { font-size: 0.8rem; color: #666; margin-bottom: 2px; text-transform: uppercase; }
+    .odds-value { font-size: 1.1rem; font-weight: bold; color: #2e7d32; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -109,7 +111,7 @@ def get_rolling_goals_stats(team_name, full_df, n=20):
 
 def format_referee(name):
     if not name or pd.isna(name) or str(name).strip() in ["0", "Okänd", "nan", "None"]:
-        return "Domare: Okänd"
+        return None
     name = str(name).split(',')[0].strip()
     parts = name.split()
     if len(parts) >= 2:
@@ -197,76 +199,69 @@ if df is not None:
             h_card_avg = get_rolling_card_avg(h_team, df, n=20)
             a_card_avg = get_rolling_card_avg(a_team, df, n=20)
             
+            # --- STATISTIKRAD 1 ---
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Mål snitt (L20)", round(h_hist['response.goals.home'].mean() + a_hist['response.goals.away'].mean(), 2) if not h_hist.empty else "N/A")
             m2.metric("xG snitt (L20)", round(h_hist['xG Hemma'].mean() + a_hist['xG Borta'].mean(), 2) if not h_hist.empty else "N/A")
             m3.metric("Hörnor snitt (L20)", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt (L20)", round(h_card_avg + a_card_avg, 1) if not h_hist.empty else "N/A")
             
-            ref_avg_val = 4.0 
-            if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
+            # --- STATISTIKRAD 2 (ODDS OCH DOMARE) ---
+            ref_avg_val = 0.0
+            display_ref = "N/A"
+            if referee_name:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
-                    st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Snitt Gula Kort (Senaste 10): {ref_avg_val:.2f}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Ingen historik hittad</div>", unsafe_allow_html=True)
-            else:
-                st.markdown("<div class='referee-box'>⚖️ Domare: Okänd</div>", unsafe_allow_html=True)
+                    display_ref = f"{ref_avg_val:.2f}"
+            
+            # Dummies för odds
+            d_odd_h, d_odd_a = 1.85, 2.10
+            comb_odds = round(d_odd_h * d_odd_a, 2)
+            dummy_odd_btts = 1.70
+            dummy_odd_corn = 2.25
 
-            # --- AI CARD & MATCH PREDICTIONS START ---
+            o1, o2, o3, o4 = st.columns(4)
+            o1.metric("Komb-odds (Ö1.5 Kort)", f"{comb_odds}")
+            o2.metric("BLGM Odds", f"{dummy_odd_btts}")
+            o3.metric("Hörnor Odds (Ö11.5)", f"{dummy_odd_corn}")
+            o4.metric(f"Domare ({referee_name if referee_name else 'N/A'})", display_ref)
+
+            # --- AI PREDICTIONS ---
             st.markdown("<div class='section-header'>🤖 DEEP STATS AI PREDICTION (L20)</div>", unsafe_allow_html=True)
             
-            # --- 1. INTENSITET & KORT ---
-            # H2H Check: Har de spelat stökigt mot varandra tidigare?
+            # 1. KORT & INTENSITET
             h2h_past = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
                           ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
             h2h_past = h2h_past[h2h_past['response.fixture.status.short'] == 'FT']
             
-            derby_boost = 0.0
-            is_high_intensity_h2h = False
-            if not h2h_past.empty:
-                avg_h2h_cards = (h2h_past['Gula kort Hemma'] + h2h_past['Gula Kort Borta']).mean()
-                if avg_h2h_cards > (h_card_avg + a_card_avg) + 1.0: # Om H2H snittar 1 kort mer än vanligt
-                    derby_boost = 0.8
-                    is_high_intensity_h2h = True
+            derby_boost = 0.8 if not h2h_past.empty and (h2h_past['Gula kort Hemma'] + h2h_past['Gula Kort Borta']).mean() > (h_card_avg + a_card_avg) else 0.0
+            ref_calc = ref_avg_val if ref_avg_val > 0 else 4.0
+            total_cards_pred = (h_card_avg + a_card_avg) * 0.6 + ref_calc * 0.4 + derby_boost
+            h_card_pred = (h_card_avg * 0.6) + (ref_calc * 0.2) + (derby_boost / 2)
+            a_card_pred = (a_card_avg * 0.6) + (ref_calc * 0.2) + (derby_boost / 2)
 
-            match_intensity = (h_card_avg + a_card_avg) 
-            total_cards_pred = (match_intensity * 0.6) + (ref_avg_val * 0.4) + derby_boost
-            h_card_pred = (h_card_avg * 0.6) + (ref_avg_val * 0.2) + (derby_boost / 2)
-            a_card_pred = (a_card_avg * 0.6) + (ref_avg_val * 0.2) + (derby_boost / 2)
-
-            # --- 2. HÖRNOR ---
+            # 2. HÖRNOR
             h_corn_avg = get_rolling_corner_avg(h_team, df, n=20)
             a_corn_avg = get_rolling_corner_avg(a_team, df, n=20)
             
-            # --- 3. BLGM ---
+            # 3. BLGM
             h_scored, h_conceded = get_rolling_goals_stats(h_team, df, n=20)
             a_scored, a_conceded = get_rolling_goals_stats(a_team, df, n=20)
-            
-            # Enkel BLGM-modell
-            home_exp_goals = (h_scored + a_conceded) / 2
-            away_exp_goals = (a_scored + h_conceded) / 2
-            btts_score = (home_exp_goals + away_exp_goals)
-            btts_pred_text = "NEJ"
-            btts_color = "red"
-            if btts_score > 2.6: 
-                btts_pred_text = "JA (Hög Sannolikhet)"
-                btts_color = "green"
-            elif btts_score > 2.0:
-                btts_pred_text = "JA (Troligt)"
-                btts_color = "#e6b800"
+            btts_score = (h_scored + a_conceded + a_scored + h_conceded) / 2
+            btts_pred_text = "JA (Troligt)" if btts_score > 2.0 else "NEJ"
+            btts_color = "green" if btts_score > 2.0 else "red"
 
-            # --- 4. TEXT-SLUTSATS GENERERING ---
+            # 4. TEXT-SLUTSATS GENERERING
             conclusion_paragraphs = []
             
             # Kort-analys (Stycke 1)
             card_reason = f"**🟨 Kort & Intensitet:** Modellens prognos på **{total_cards_pred:.1f} kort** baseras på att {h_team} snittar {h_card_avg:.1f} och {a_team} {a_card_avg:.1f} kort de senaste 20 matcherna. "
             if ref_avg_val > 4.5:
                 card_reason += f"En starkt bidragande faktor är domaren {referee_name} som har en strikt nivå ({ref_avg_val:.1f} snitt), vilket höjer risken för kort avsevärt. "
-            elif ref_avg_val < 3.0:
+            elif ref_avg_val < 3.0 and ref_avg_val > 0:
                 card_reason += f"Domaren {referee_name} är dock statistiskt sett tillåtande, vilket håller ner den totala prognosen något. "
-            if is_high_intensity_h2h:
+            if derby_boost > 0:
                 card_reason += "Noterbart är att tidigare möten mellan dessa lag har varit hetare än deras vanliga ligamatcher, vilket vår modell har justerat för."
             conclusion_paragraphs.append(card_reason)
 
@@ -293,7 +288,7 @@ if df is not None:
 
             final_conclusion_html = "<br><br>".join(conclusion_paragraphs)
 
-            # --- VISUALISERING ---
+            # VISUALISERING
             c1, c2, c3 = st.columns(3)
             c1.metric("Hemmalag (xCards)", f"{h_card_pred:.2f}")
             c2.metric("TOTALT (xCards)", f"{total_cards_pred:.2f}")
@@ -302,9 +297,11 @@ if df is not None:
             # Kort-boxar
             col_b1, col_b2 = st.columns(2)
             with col_b1:
+                st.markdown(f"<div class='odds-label'>Unibet Odds Ö1.5 Kort</div><div class='odds-value'>{d_odd_h}</div>", unsafe_allow_html=True)
                 if h_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {h_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
             with col_b2:
+                st.markdown(f"<div class='odds-label'>Unibet Odds Ö1.5 Kort</div><div class='odds-value'>{d_odd_a}</div>", unsafe_allow_html=True)
                 if a_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
 
@@ -322,24 +319,21 @@ if df is not None:
             # BLGM RAD
             st.markdown(f"<div style='text-align:center; font-weight:bold; margin-top: 15px;'>BÅDA LAGEN GÖR MÅL (BLGM)? <span style='color:{btts_color}; font-size:1.2em;'>{btts_pred_text}</span></div>", unsafe_allow_html=True)
 
-            # Slutsats Textruta (Längst ner i sektionen)
+            # Slutsats Textruta
             st.markdown(f"<div class='ai-text-box'><b>🎙️ AI-Analys & Slutsats:</b><br><br>{final_conclusion_html}</div>", unsafe_allow_html=True)
             # --- AI END ---
 
             st.markdown("<h3 style='text-align:center; margin-top:20px; color:#333;'>SEASON AVERAGES COMPARISON</h3>", unsafe_allow_html=True)
             stat_comparison_row("MÅL / MATCH", h_hist['response.goals.home'].mean(), a_hist['response.goals.away'].mean())
-            stat_comparison_row("EXPECTED GOALS (XG)", h_hist['xG Hemma'].mean(), a_hist['xG Borta'].mean())
+            stat_comparison_row("EXPECTED GOALS (XG)", h_hist['xG Hemma'].mean(), h_hist['xG Borta'].mean())
             stat_comparison_row("BOLLINNEHAV", h_hist['Bollinnehav Hemma'].mean(), h_hist['Bollinnehav Borta'].mean(), is_pct=True, precision=0)
             stat_comparison_row("HÖRNOR / MATCH", h_hist['Hörnor Hemma'].mean(), a_hist['Hörnor Borta'].mean(), precision=1)
             stat_comparison_row("GULA KORT / MATCH", h_hist['Gula kort Hemma'].mean(), a_hist['Gula Kort Borta'].mean(), precision=1)
             stat_comparison_row("RÖDA KORT / MATCH", h_hist['Röda kort Hemma'].mean(), h_hist['Röda kort Borta'].mean(), precision=2)
             
             st.markdown("<br>### ⚔️ Senaste inbördes möten", unsafe_allow_html=True)
-            h2h = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
-                     ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
-            h2h = h2h[h2h['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
-            if not h2h.empty:
-                h2h_display = h2h.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
+            if not h2h_past.empty:
+                h2h_display = h2h_past.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
                 st.dataframe(h2h_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
 
         elif st.session_state.view_mode == "match_detail":
@@ -367,7 +361,6 @@ if df is not None:
                 a_pos = get_team_pos(a_name, l_name, standings_df)
                 h_avg = get_rolling_card_avg(h_name, df, n=20)
                 a_avg = get_rolling_card_avg(a_name, df, n=20)
-                
                 h_color = "#28a745" if h_avg >= 2.00 else "black"
                 a_color = "#28a745" if a_avg >= 2.00 else "black"
                 
