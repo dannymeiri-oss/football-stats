@@ -60,47 +60,79 @@ def load_data(url):
 # --- API ODDS HÄMTNING ---
 @st.cache_data(ttl=600)
 def get_odds_by_fixture_id(fixture_id):
-    """Hämtar odds direkt via fixture_id från API-Football."""
+    """Hämtar odds direkt via fixture_id från API-Football med enkel exakt matchning."""
     res = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
+    
+    # 1. Validera ID
     if not fixture_id or str(fixture_id) in ["0", "0.0", "nan"]: return res
 
     headers = {'x-rapidapi-host': "v3.football.api-sports.io", 'x-apisports-key': API_KEY}
+    
     try:
+        # Konvertera ID till ren sträng (t.ex "123456")
         fid = str(int(float(fixture_id)))
         url = f"{API_BASE_URL}/odds?fixture={fid}"
+        
         r = requests.get(url, headers=headers, timeout=5)
         data = r.json()
         
-        if not data.get('response'): return res
+        if not data.get('response') or len(data['response']) == 0: return res
             
         bookmakers = data['response'][0].get('bookmakers', [])
-        # Prioritera Bet365 (ID 1) för hörnlinjer, annars första bästa
-        bookie = next((b for b in bookmakers if b['id'] == 1), bookmakers[0] if bookmakers else None)
+        if not bookmakers: return res
         
-        if bookie:
-            for bet in bookie.get('bets', []):
-                # ID 8: Both Teams To Score
-                if bet['id'] == 8:
-                    for v in bet['values']:
-                        if v['value'] == "Yes": res["btts"] = v['odd']
+        # 2. Hitta Bet365 (ID 1) i första hand, annars ta första bästa
+        target_bookie = None
+        for b in bookmakers:
+            if b['id'] == 1:
+                target_bookie = b
+                break
+        if not target_bookie:
+            target_bookie = bookmakers[0]
+        
+        # 3. Leta efter odds med exakta strängar (Ingen "smart" logik som kan fela)
+        for bet in target_bookie.get('bets', []):
+            
+            # BLGM (ID 8)
+            if bet['id'] == 8:
+                for v in bet['values']:
+                    if v['value'] == "Yes": 
+                        res["btts"] = v['odd']
+            
+            # HÖRNOR (ID 15) - Leta efter specifika nycklar
+            if bet['id'] == 15:
+                # Skapa en enkel uppslagstabell: "Over 11.5" -> 2.50
+                odds_map = {item['value']: item['odd'] for item in bet['values']}
                 
-                # ID 15: Corners Over/Under
-                if bet['id'] == 15:
-                    corner_lines = {v['value'].replace("Over ", "").strip(): v['odd'] for v in bet['values'] if "Over" in v['value']}
-                    # Letar efter linjen 11.5, faller tillbaka på lägre om den saknas
-                    for line in ["11.5", "10.5", "9.5", "8.5"]:
-                        if line in corner_lines:
-                            res["corners"] = f"{corner_lines[line]} (Ö{line})"
-                            break
+                # Prioritetsordning: Vilken lina vill vi helst visa?
+                if "Over 11.5" in odds_map:
+                    res["corners"] = f"{odds_map['Over 11.5']} (Ö11.5)"
+                elif "Over 10.5" in odds_map:
+                    res["corners"] = f"{odds_map['Over 10.5']} (Ö10.5)"
+                elif "Over 9.5" in odds_map:
+                    res["corners"] = f"{odds_map['Over 9.5']} (Ö9.5)"
+                elif "Over 8.5" in odds_map:
+                    res["corners"] = f"{odds_map['Over 8.5']} (Ö8.5)"
+                elif "Over 12.5" in odds_map:
+                    res["corners"] = f"{odds_map['Over 12.5']} (Ö12.5)"
+
+            # KORT (ID 45) - Leta efter specifika nycklar
+            if bet['id'] == 45:
+                card_map = {item['value']: item['odd'] for item in bet['values']}
                 
-                # ID 45: Cards Over/Under
-                if bet['id'] == 45:
-                    card_lines = {v['value'].replace("Over ", "").strip(): v['odd'] for v in bet['values'] if "Over" in v['value']}
-                    for line in ["3.5", "4.5", "2.5", "5.5"]:
-                        if line in card_lines:
-                            res["cards"] = f"{card_lines[line]} (Ö{line})"
-                            break
-    except: pass
+                # Prioritetsordning för kort
+                if "Over 3.5" in card_map:
+                    res["cards"] = f"{card_map['Over 3.5']} (Ö3.5)"
+                elif "Over 4.5" in card_map:
+                    res["cards"] = f"{card_map['Over 4.5']} (Ö4.5)"
+                elif "Over 2.5" in card_map:
+                    res["cards"] = f"{card_map['Over 2.5']} (Ö2.5)"
+                elif "Over 5.5" in card_map:
+                    res["cards"] = f"{card_map['Over 5.5']} (Ö5.5)"
+
+    except Exception as e:
+        res["debug"] = str(e)
+        
     return res
 
 def get_team_pos(team_name, league_name, standings):
@@ -269,9 +301,9 @@ if df is not None:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
                     display_ref = f"{ref_avg_val:.2f}"
             
-            # --- HÄMTA ODDS (INBYGGD LOGIK) ---
+            # --- HÄMTA ODDS (NY FUNKTION) ---
             odds_data = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
-            if 'response.fixture.id' in m:
+            if m['response.fixture.status.short'] == 'NS' and 'response.fixture.id' in m:
                 odds_data = get_odds_by_fixture_id(m['response.fixture.id'])
 
             o1, o2, o3, o4 = st.columns(4)
@@ -333,6 +365,8 @@ if df is not None:
             goal_reason = f"**⚽ Målchanser:** "
             if btts_score > 2.6:
                 goal_reason += f"Båda lagen visar fin offensiv form samtidigt som försvaren läcker. BLGM (Båda lagen gör mål) ser statistiskt starkt ut."
+            elif h_scored > 2.0 and a_scored < 0.8:
+                goal_reason += f"Data pekar på en ensidig matchbild där {h_team} dominerar. Risken är att {a_team} får svårt att näta."
             else:
                 goal_reason += "En svårbedömd målbild där dagsformen blir avgörande."
             conclusion_paragraphs.append(goal_reason)
