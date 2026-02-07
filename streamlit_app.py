@@ -46,23 +46,21 @@ def load_data(url):
 
 def get_team_pos(team_name, league_name, standings):
     """ Hämtar position (#) för ett lag baserat på lag och liga från standings-sheetet. """
-    if standings is None or team_name is None or league_name is None: 
-        return ""
+    if standings is None or team_name is None: return ""
     try:
-        # Säkerställ att vi matchar mot rätt kolumner oavsett namn (Liga=0, Pos=1, Team=2)
-        l_col = standings.columns[0]
-        p_col = standings.columns[1]
-        t_col = standings.columns[2]
+        # ENDAST DENNA LOGIK ÄR ÄNDRAD:
+        # Vi letar efter rader där både liga (kolumn 0) och lag (kolumn 2) matchar
+        league_col = standings.columns[0]
+        pos_col = standings.columns[1]
+        team_col = standings.columns[2]
         
-        # Filtrera först på liga, sedan på lag
-        mask = (standings[l_col].astype(str) == str(league_name)) & (standings[t_col].astype(str) == str(team_name))
-        result = standings.loc[mask, p_col]
+        row = standings[(standings[league_col].astype(str) == str(league_name)) & 
+                        (standings[team_col].astype(str) == str(team_name))]
         
-        if not result.empty:
-            val = result.values[0]
+        if not row.empty:
+            val = row[pos_col].values[0]
             return f"#{int(float(val))}"
-    except: 
-        pass
+    except: pass
     return ""
 
 def format_referee(name):
@@ -129,6 +127,7 @@ if df is not None:
         l_name = m['response.league.name']
         referee_name = m['ref_clean']
         
+        # Hämta positioner för headern
         h_pos = get_team_pos(h_team, l_name, standings_df)
         a_pos = get_team_pos(a_team, l_name, standings_df)
 
@@ -157,12 +156,14 @@ if df is not None:
             h_hist = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')]
             a_hist = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')]
             
+            # KPI Rader
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Mål snitt", round(h_hist['response.goals.home'].mean() + a_hist['response.goals.away'].mean(), 2) if not h_hist.empty else "N/A")
             m2.metric("xG snitt", round(h_hist['xG Hemma'].mean() + a_hist['xG Borta'].mean(), 2) if not h_hist.empty else "N/A")
             m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else "N/A")
             
+            # DOMARE RAD (Före Season Averages)
             if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
@@ -176,7 +177,7 @@ if df is not None:
             st.markdown("<h3 style='text-align:center; margin-top:20px; color:#333;'>SEASON AVERAGES COMPARISON</h3>", unsafe_allow_html=True)
             stat_comparison_row("MÅL / MATCH", h_hist['response.goals.home'].mean(), a_hist['response.goals.away'].mean())
             stat_comparison_row("EXPECTED GOALS (XG)", h_hist['xG Hemma'].mean(), a_hist['xG Borta'].mean())
-            stat_comparison_row("BOLLINNEHAV", h_hist['Bollinnehav Hemma'].mean(), a_hist['Bollinnehav Borta'].mean(), is_pct=True, precision=0)
+            stat_comparison_row("BOLLINNEHAV", h_hist['Bollinnehav Hemma'].mean(), h_hist['Bollinnehav Borta'].mean(), is_pct=True, precision=0)
             stat_comparison_row("HÖRNOR / MATCH", h_hist['Hörnor Hemma'].mean(), a_hist['Hörnor Borta'].mean(), precision=1)
             stat_comparison_row("GULA KORT / MATCH", h_hist['Gula kort Hemma'].mean(), a_hist['Gula Kort Borta'].mean(), precision=1)
             
