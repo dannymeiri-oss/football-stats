@@ -60,61 +60,47 @@ def load_data(url):
 # --- API ODDS HÄMTNING ---
 @st.cache_data(ttl=600)
 def get_odds_by_fixture_id(fixture_id):
-    """Hämtar odds direkt via fixture_id från API-Football med bredare bookmaker-stöd."""
+    """Hämtar odds direkt via fixture_id från API-Football."""
     res = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
-    
     if not fixture_id or str(fixture_id) in ["0", "0.0", "nan"]: return res
 
     headers = {'x-rapidapi-host': "v3.football.api-sports.io", 'x-apisports-key': API_KEY}
-    
     try:
         fid = str(int(float(fixture_id)))
         url = f"{API_BASE_URL}/odds?fixture={fid}"
-        
         r = requests.get(url, headers=headers, timeout=5)
         data = r.json()
         
-        if not data.get('response') or len(data['response']) == 0: return res
+        if not data.get('response'): return res
             
         bookmakers = data['response'][0].get('bookmakers', [])
-        if not bookmakers: return res
+        # Prioritera Bet365 (ID 1) för hörnlinjer, annars första bästa
+        bookie = next((b for b in bookmakers if b['id'] == 1), bookmakers[0] if bookmakers else None)
         
-        # Sortera så vi testar Bet365 (ID 1) först, sen andra
-        for bookie in sorted(bookmakers, key=lambda x: x['id'] != 1):
+        if bookie:
             for bet in bookie.get('bets', []):
-                
-                # BLGM
-                if bet['id'] == 8 and res["btts"] == "-":
+                # ID 8: Both Teams To Score
+                if bet['id'] == 8:
                     for v in bet['values']:
                         if v['value'] == "Yes": res["btts"] = v['odd']
                 
-                # HÖRNOR (ID 15)
-                if bet['id'] == 15 and res["corners"] == "-":
-                    # Mappa alla 'Over' värden
-                    lines = {v['value'].replace("Over ", "").strip(): v['odd'] for v in bet['values'] if "Over" in v['value']}
-                    # Prioritera 11.5, sen 10.5, sen 9.5
-                    for line in ["11.5", "10.5", "9.5", "8.5", "12.5"]:
-                        if line in lines:
-                            res["corners"] = f"{lines[line]} (Ö{line})"
+                # ID 15: Corners Over/Under
+                if bet['id'] == 15:
+                    corner_lines = {v['value'].replace("Over ", "").strip(): v['odd'] for v in bet['values'] if "Over" in v['value']}
+                    # Letar efter linjen 11.5, faller tillbaka på lägre om den saknas
+                    for line in ["11.5", "10.5", "9.5", "8.5"]:
+                        if line in corner_lines:
+                            res["corners"] = f"{corner_lines[line]} (Ö{line})"
                             break
                 
-                # KORT (ID 45)
-                if bet['id'] == 45 and res["cards"] == "-":
-                    # Mappa alla 'Over' värden
-                    c_lines = {v['value'].replace("Over ", "").strip(): v['odd'] for v in bet['values'] if "Over" in v['value']}
-                    # Prioritera 3.5, sen 4.5, sen 2.5
+                # ID 45: Cards Over/Under
+                if bet['id'] == 45:
+                    card_lines = {v['value'].replace("Over ", "").strip(): v['odd'] for v in bet['values'] if "Over" in v['value']}
                     for line in ["3.5", "4.5", "2.5", "5.5"]:
-                        if line in c_lines:
-                            res["cards"] = f"{c_lines[line]} (Ö{line})"
+                        if line in card_lines:
+                            res["cards"] = f"{card_lines[line]} (Ö{line})"
                             break
-            
-            # Om vi hittat allt, sluta leta
-            if res["btts"] != "-" and res["corners"] != "-" and res["cards"] != "-":
-                break
-
-    except Exception as e:
-        res["debug"] = str(e)
-        
+    except: pass
     return res
 
 def get_team_pos(team_name, league_name, standings):
@@ -283,9 +269,9 @@ if df is not None:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
                     display_ref = f"{ref_avg_val:.2f}"
             
-            # --- HÄMTA ODDS (NY FUNKTION) ---
+            # --- HÄMTA ODDS (INBYGGD LOGIK) ---
             odds_data = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
-            if m['response.fixture.status.short'] == 'NS' and 'response.fixture.id' in m:
+            if 'response.fixture.id' in m:
                 odds_data = get_odds_by_fixture_id(m['response.fixture.id'])
 
             o1, o2, o3, o4 = st.columns(4)
@@ -347,8 +333,6 @@ if df is not None:
             goal_reason = f"**⚽ Målchanser:** "
             if btts_score > 2.6:
                 goal_reason += f"Båda lagen visar fin offensiv form samtidigt som försvaren läcker. BLGM (Båda lagen gör mål) ser statistiskt starkt ut."
-            elif h_scored > 2.0 and a_scored < 0.8:
-                goal_reason += f"Data pekar på en ensidig matchbild där {h_team} dominerar. Risken är att {a_team} får svårt att näta."
             else:
                 goal_reason += "En svårbedömd målbild där dagsformen blir avgörande."
             conclusion_paragraphs.append(goal_reason)
