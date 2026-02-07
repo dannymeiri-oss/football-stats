@@ -64,7 +64,7 @@ def get_team_pos(team_name, league_name, standings):
     except: pass
     return ""
 
-def get_rolling_card_avg(team_name, full_df, n=10):
+def get_rolling_card_avg(team_name, full_df, n=20):
     team_matches = full_df[((full_df['response.teams.home.name'] == team_name) | 
                             (full_df['response.teams.away.name'] == team_name)) & 
                            (full_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(n)
