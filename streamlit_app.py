@@ -31,7 +31,7 @@ st.markdown("""
     .bet-box { padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; font-size: 0.9rem; }
     .good-bet { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
     .bad-bet { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-    .ai-text-box { background-color: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196F3; margin: 15px 0; font-style: italic; color: #333; font-size: 0.95rem; line-height: 1.5; }
+    .ai-text-box { background-color: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196F3; margin: 15px 0; font-style: italic; color: #333; font-size: 0.95rem; line-height: 1.6; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -192,7 +192,6 @@ if df is not None:
         """, unsafe_allow_html=True)
 
         if st.session_state.view_mode == "h2h_detail":
-            # Datahämtning
             h_hist = df[(df['response.teams.home.name'] == h_team) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(20)
             a_hist = df[(df['response.teams.away.name'] == a_team) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(20)
             h_card_avg = get_rolling_card_avg(h_team, df, n=20)
@@ -241,14 +240,14 @@ if df is not None:
             h_corn_avg = get_rolling_corner_avg(h_team, df, n=20)
             a_corn_avg = get_rolling_corner_avg(a_team, df, n=20)
             
-            # --- 3. BLGM (BÅDA LAGEN GÖR MÅL) ---
+            # --- 3. BLGM ---
             h_scored, h_conceded = get_rolling_goals_stats(h_team, df, n=20)
             a_scored, a_conceded = get_rolling_goals_stats(a_team, df, n=20)
             
-            # Enkel BLGM-modell: (Hemma-offensiv vs Borta-defensiv) + (Borta-offensiv vs Hemma-defensiv)
+            # Enkel BLGM-modell
             home_exp_goals = (h_scored + a_conceded) / 2
             away_exp_goals = (a_scored + h_conceded) / 2
-            btts_score = (home_exp_goals + away_exp_goals) # Högre = Bättre chans
+            btts_score = (home_exp_goals + away_exp_goals)
             btts_pred_text = "NEJ"
             btts_color = "red"
             if btts_score > 2.6: 
@@ -256,30 +255,43 @@ if df is not None:
                 btts_color = "green"
             elif btts_score > 2.0:
                 btts_pred_text = "JA (Troligt)"
-                btts_color = "#e6b800" # Gul/Orange
+                btts_color = "#e6b800"
 
-            # --- 4. GENERERA TEXT-SLUTSATS ---
-            reasons = []
+            # --- 4. TEXT-SLUTSATS GENERERING ---
+            conclusion_paragraphs = []
             
-            # Kort-analys
-            if total_cards_pred >= 5.0:
-                reasons.append(f"🔥 **Hög intensitet:** Kortprognosen på {total_cards_pred:.1f} indikerar en stökig match.")
-                if is_high_intensity_h2h:
-                    reasons.append("Historiken mellan lagen visar dessutom en tydlig 'derby-karaktär' med fler kort än normalt.")
-                if ref_avg_val > 4.2:
-                    reasons.append(f"Domaren ({referee_name}) är striktare än snittet, vilket ökar risken för kort.")
-            elif total_cards_pred < 3.5:
-                reasons.append(f"✅ **Disciplinerat:** Lågt förväntat kortantal ({total_cards_pred:.1f}). Båda lagen tenderar att spela rent.")
+            # Kort-analys (Stycke 1)
+            card_reason = f"**🟨 Kort & Intensitet:** Modellens prognos på **{total_cards_pred:.1f} kort** baseras på att {h_team} snittar {h_card_avg:.1f} och {a_team} {a_card_avg:.1f} kort de senaste 20 matcherna. "
+            if ref_avg_val > 4.5:
+                card_reason += f"En starkt bidragande faktor är domaren {referee_name} som har en strikt nivå ({ref_avg_val:.1f} snitt), vilket höjer risken för kort avsevärt. "
+            elif ref_avg_val < 3.0:
+                card_reason += f"Domaren {referee_name} är dock statistiskt sett tillåtande, vilket håller ner den totala prognosen något. "
+            if is_high_intensity_h2h:
+                card_reason += "Noterbart är att tidigare möten mellan dessa lag har varit hetare än deras vanliga ligamatcher, vilket vår modell har justerat för."
+            conclusion_paragraphs.append(card_reason)
+
+            # Hörnor-analys (Stycke 2)
+            corner_reason = f"**🚩 Hörnor:** "
+            total_corn_proj = h_corn_avg + a_corn_avg
+            if total_corn_proj > 10.5:
+                corner_reason += f"Vi ser stor potential för hörnor (totalt ca {total_corn_proj:.1f}). Båda lagen tenderar att spela brett och skapa fasta situationer."
+            elif total_corn_proj < 8.5:
+                corner_reason += f"Förvänta er få hörnor (prognos {total_corn_proj:.1f}). Lagen tenderar att spela centralt eller har lågt antal inlägg per match."
             else:
-                reasons.append(f"⚠️ **Medelhög intensitet:** Förvänta dig en normalfysisk match ({total_cards_pred:.1f} kort).")
+                corner_reason += f"Hörnstatistiken ligger på en medelnivå ({total_corn_proj:.1f}), inga extrema avvikelser syns i datan."
+            conclusion_paragraphs.append(corner_reason)
 
-            # Mål-analys
+            # Mål-analys (Stycke 3)
+            goal_reason = f"**⚽ Målchanser:** "
             if btts_score > 2.6:
-                reasons.append(f"⚽ **Målfest?** Båda lagen uppvisar starka offensiva siffror (xG), vilket gör BLGM till ett intressant val.")
+                goal_reason += f"Båda lagen visar fin offensiv form samtidigt som försvaren läcker. BLGM (Båda lagen gör mål) ser statistiskt starkt ut."
             elif home_exp_goals > 2.0 and away_exp_goals < 0.8:
-                reasons.append(f"🛡️ **Ensidigt?** Data pekar på att {h_team} dominerar, medan {a_team} kan få svårt att näta.")
+                goal_reason += f"Data pekar på en ensidig matchbild där {h_team} dominerar. Risken är att {a_team} får svårt att näta."
+            else:
+                goal_reason += "En svårbedömd målbild där dagsformen blir avgörande."
+            conclusion_paragraphs.append(goal_reason)
 
-            ai_conclusion_text = " ".join(reasons)
+            final_conclusion_html = "<br><br>".join(conclusion_paragraphs)
 
             # --- VISUALISERING ---
             c1, c2, c3 = st.columns(3)
@@ -287,20 +299,31 @@ if df is not None:
             c2.metric("TOTALT (xCards)", f"{total_cards_pred:.2f}")
             c3.metric("Bortalag (xCards)", f"{a_card_pred:.2f}")
             
-            st.markdown(f"<div class='ai-text-box'><b>🎙️ AI-Slutsats:</b><br>{ai_conclusion_text}</div>", unsafe_allow_html=True)
+            # Kort-boxar
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if h_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
+                else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {h_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
+            with col_b2:
+                if a_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
+                else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
 
             stat_comparison_row("AI HÖRNOR PREDIKTION", h_corn_avg, a_corn_avg)
             
-            # BLGM RAD
-            st.markdown(f"<div style='text-align:center; font-weight:bold; margin: 10px 0;'>BÅDA LAGEN GÖR MÅL (BLGM)? <span style='color:{btts_color}; font-size:1.2em;'>{btts_pred_text}</span></div>", unsafe_allow_html=True)
+            # Hörn-boxar
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                if h_corn_avg >= 5.5: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
+                else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {h_team} UNDER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
+            with col_c2:
+                if a_corn_avg >= 5.5: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
+                else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
 
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if h_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 1.5 KORT</div>", unsafe_allow_html=True)
-                else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {h_team} KORT</div>", unsafe_allow_html=True)
-            with col_b2:
-                if a_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 1.5 KORT</div>", unsafe_allow_html=True)
-                else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} KORT</div>", unsafe_allow_html=True)
+            # BLGM RAD
+            st.markdown(f"<div style='text-align:center; font-weight:bold; margin-top: 15px;'>BÅDA LAGEN GÖR MÅL (BLGM)? <span style='color:{btts_color}; font-size:1.2em;'>{btts_pred_text}</span></div>", unsafe_allow_html=True)
+
+            # Slutsats Textruta (Längst ner i sektionen)
+            st.markdown(f"<div class='ai-text-box'><b>🎙️ AI-Analys & Slutsats:</b><br><br>{final_conclusion_html}</div>", unsafe_allow_html=True)
             # --- AI END ---
 
             st.markdown("<h3 style='text-align:center; margin-top:20px; color:#333;'>SEASON AVERAGES COMPARISON</h3>", unsafe_allow_html=True)
@@ -312,11 +335,12 @@ if df is not None:
             stat_comparison_row("RÖDA KORT / MATCH", h_hist['Röda kort Hemma'].mean(), h_hist['Röda kort Borta'].mean(), precision=2)
             
             st.markdown("<br>### ⚔️ Senaste inbördes möten", unsafe_allow_html=True)
-            if not h2h_past.empty:
-                h2h_display = h2h_past.sort_values('datetime', ascending=False).rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
+            h2h = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
+                     ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
+            h2h = h2h[h2h['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
+            if not h2h.empty:
+                h2h_display = h2h.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
                 st.dataframe(h2h_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
-            else:
-                st.info("Inga tidigare möten hittades.")
 
         elif st.session_state.view_mode == "match_detail":
             st.markdown("<h2 style='text-align:center; color:#ddd; margin-bottom:20px;'>MATCH STATISTICS</h2>", unsafe_allow_html=True)
