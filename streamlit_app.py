@@ -296,14 +296,18 @@ if df is not None:
                                                 {a_name} <span class="pos-tag">{a_pos}</span>
                                             </div>
                                         </div>
-                                        <div style="display: flex; justify-content: center; gap: 40px; margin-top: 5px; border-top: 1px solid #f9f9f9; padding-top: 4px;">
-                                            <div style="font-size: 0.75rem; color: #666;"><span style="color: #e6b800;">🟨</span> {h_cards} kort</div>
-                                            <div style="font-size: 0.75rem; color: #666;"><span style="color: #e6b800;">🟨</span> {a_cards} kort</div>
+                                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 5px; padding-top: 4px; border-top: 1px solid #fcfcfc;">
+                                            <div style="width:100px;"></div> <div style="flex:1; text-align:right; padding-right: 22px;">
+                                                <span style="font-size: 0.75rem; color: #777;"><span style="color: #e6b800;">🟨</span> {h_cards}</span>
+                                            </div>
+                                            <div style="width:69px;"></div> <div style="flex:1; text-align:left; padding-left: 22px;">
+                                                <span style="font-size: 0.75rem; color: #777;"><span style="color: #e6b800;">🟨</span> {a_cards}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 """, unsafe_allow_html=True)
                             with col_btn:
-                                st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+                                st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
                                 if st.button("Analys", key=f"btn_la_{idx}", use_container_width=True):
                                     st.session_state.selected_match = r
                                     st.session_state.view_mode = "match_detail"
