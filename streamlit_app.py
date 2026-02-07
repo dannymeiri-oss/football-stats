@@ -45,7 +45,6 @@ def load_data(url):
     except: return None
 
 def get_team_pos(team_name, league_name, standings):
-    """ Hämtar position (#) för ett lag baserat på lag och liga från standings-sheetet. """
     if standings is None or team_name is None: return ""
     try:
         league_col = standings.columns[0]
@@ -124,8 +123,6 @@ if df is not None:
         h_team, a_team = m['response.teams.home.name'], m['response.teams.away.name']
         l_name = m['response.league.name']
         referee_name = m['ref_clean']
-        
-        # Hämtar positioner för headern
         h_pos = get_team_pos(h_team, l_name, standings_df)
         a_pos = get_team_pos(a_team, l_name, standings_df)
 
@@ -272,7 +269,6 @@ if df is not None:
                             c1.metric("Offside", round(a_df['Offside Borta'].mean(), 1)); c2.metric("Fouls", round(a_df['Fouls Borta'].mean(), 1))
                     
                     st.divider(); st.subheader(f"📅 Senaste 10 matcher för {sel_team}")
-                    # HÄR ÄR DEN NYA DESIGNEN FÖR SENASTE 10 I LAGANALYS
                     last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | (team_df['response.teams.away.name'] == sel_team)) & (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                     if not last_10.empty:
                         for idx, r in last_10.iterrows():
@@ -280,25 +276,34 @@ if df is not None:
                             l_name = r['response.league.name']
                             h_pos = get_team_pos(h_name, l_name, standings_df)
                             a_pos = get_team_pos(a_name, l_name, standings_df)
+                            h_cards = int(r['Gula kort Hemma'])
+                            a_cards = int(r['Gula Kort Borta'])
                             
                             col_info, col_btn = st.columns([4.5, 1.5])
                             with col_info:
                                 score = f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}"
                                 st.markdown(f"""
-                                    <div class="match-row">
-                                        <div style="width:130px; font-size:0.8em; color:gray;">{r['Speltid']}</div>
-                                        <div style="flex:1; text-align:right; font-weight:bold;">
-                                            <span class="pos-tag">{h_pos}</span> {h_name} 
-                                            <img src="{r['response.teams.home.logo']}" width="20">
+                                    <div class="match-row" style="flex-direction: column; align-items: stretch; padding: 10px 15px;">
+                                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                                            <div style="width:100px; font-size:0.75rem; color:gray;">{r['Speltid']}</div>
+                                            <div style="flex:1; text-align:right; font-weight:bold; font-size: 0.95rem;">
+                                                <span class="pos-tag">{h_pos}</span> {h_name} 
+                                                <img src="{r['response.teams.home.logo']}" width="18">
+                                            </div>
+                                            <div style="background:#222; color:white; padding:2px 8px; margin:0 12px; border-radius:4px; min-width:45px; text-align:center; font-weight: bold;">{score}</div>
+                                            <div style="flex:1; text-align:left; font-weight:bold; font-size: 0.95rem;">
+                                                <img src="{r['response.teams.away.logo']}" width="18"> 
+                                                {a_name} <span class="pos-tag">{a_pos}</span>
+                                            </div>
                                         </div>
-                                        <div style="background:#222; color:white; padding:2px 10px; margin:0 10px; border-radius:4px; min-width:50px; text-align:center;">{score}</div>
-                                        <div style="flex:1; text-align:left; font-weight:bold;">
-                                            <img src="{r['response.teams.away.logo']}" width="20"> 
-                                            {a_name} <span class="pos-tag">{a_pos}</span>
+                                        <div style="display: flex; justify-content: center; gap: 40px; margin-top: 5px; border-top: 1px solid #f9f9f9; padding-top: 4px;">
+                                            <div style="font-size: 0.75rem; color: #666;"><span style="color: #e6b800;">🟨</span> {h_cards} kort</div>
+                                            <div style="font-size: 0.75rem; color: #666;"><span style="color: #e6b800;">🟨</span> {a_cards} kort</div>
                                         </div>
                                     </div>
                                 """, unsafe_allow_html=True)
                             with col_btn:
+                                st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
                                 if st.button("Analys", key=f"btn_la_{idx}", use_container_width=True):
                                     st.session_state.selected_match = r
                                     st.session_state.view_mode = "match_detail"
@@ -329,8 +334,7 @@ if df is not None:
                 sel_league_stand = st.selectbox("Välj liga:", available_leagues, key="stand_sel")
                 display_table = standings_df[standings_df[liga_col] == sel_league_stand].copy()
                 st.dataframe(display_table.iloc[:, 1:], use_container_width=True, hide_index=True)
-            else:
-                st.info("Ingen tabell hittades.")
+            else: st.info("Ingen tabell hittades.")
 
         with tab5:
             st.header("📊 Topplista")
@@ -354,8 +358,7 @@ if df is not None:
                         recent = t_matches.head(num_matches)
                         cards = [row['Gula kort Hemma'] if row['response.teams.home.name'] == t else row['Gula Kort Borta'] for _, row in recent.iterrows()]
                         team_stats.append({'Lag': t, 'Snitt Kort': round(sum(cards)/len(cards), 2), 'Matcher': len(cards)})
-                if team_stats:
-                    st.dataframe(pd.DataFrame(team_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
+                if team_stats: st.dataframe(pd.DataFrame(team_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
 
             elif top_cat == "Domare":
                 ref_stats = []
@@ -366,17 +369,14 @@ if df is not None:
                         recent = r_matches.head(num_matches)
                         avg = (recent['Gula kort Hemma'].sum() + recent['Gula Kort Borta'].sum()) / len(recent)
                         ref_stats.append({'Domare': r, 'Snitt Kort': round(avg, 2), 'Matcher': len(recent)})
-                if ref_stats:
-                    st.dataframe(pd.DataFrame(ref_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
+                if ref_stats: st.dataframe(pd.DataFrame(ref_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
 
             else:
                 upcoming = df[df['response.fixture.status.short'] == 'NS'].sort_values('datetime', ascending=True)
                 now_check = datetime.now().replace(tzinfo=None)
                 end_check = now_check + timedelta(days=7)
                 upcoming = upcoming[(upcoming['datetime'] >= now_check) & (upcoming['datetime'] <= end_check)]
-                
-                if sel_league != "Alla":
-                    upcoming = upcoming[upcoming['response.league.name'] == sel_league]
+                if sel_league != "Alla": upcoming = upcoming[upcoming['response.league.name'] == sel_league]
                 
                 analysis_results = []
                 for _, row in upcoming.iterrows():
@@ -392,13 +392,7 @@ if df is not None:
                         if not r_matches.empty:
                             ref_avg_val = round((r_matches['Gula kort Hemma'].sum() + r_matches['Gula Kort Borta'].sum()) / len(r_matches), 2)
 
-                    analysis_results.append({
-                        'Match': f"{h_team} vs {a_team}",
-                        'Kombinerat (Lagen)': round(h_avg + a_avg, 2),
-                        'Domare (Snitt)': ref_avg_val,
-                        'Liga': row['response.league.name']
-                    })
-                if analysis_results:
-                    st.dataframe(pd.DataFrame(analysis_results).sort_values('Kombinerat (Lagen)', ascending=False), use_container_width=True, hide_index=True)
+                    analysis_results.append({'Match': f"{h_team} vs {a_team}", 'Kombinerat (Lagen)': round(h_avg + a_avg, 2), 'Domare (Snitt)': ref_avg_val, 'Liga': row['response.league.name']})
+                if analysis_results: st.dataframe(pd.DataFrame(analysis_results).sort_values('Kombinerat (Lagen)', ascending=False), use_container_width=True, hide_index=True)
 else:
     st.error("Kunde inte ladda data.")
