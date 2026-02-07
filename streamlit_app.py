@@ -26,11 +26,6 @@ st.markdown("""
     
     /* DOMARE INFO I H2H */
     .referee-box { text-align: center; background: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #ddd; margin-bottom: 20px; font-weight: bold; }
-
-    /* NY CSS FÖR AI PREDICTIONS */
-    .bet-box { padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; font-size: 0.9rem; color: #333; }
-    .good-bet { background-color: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
-    .bad-bet { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -169,46 +164,15 @@ if df is not None:
             m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else "N/A")
             
-            # Initiera variabel för domarsnitt (används i AI Prediction)
-            ref_avg_val = 4.0 # Baseline om domare saknas
-
             if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
-                    ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
-                    st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Snitt Gula Kort (Senaste 10): {ref_avg_val:.2f}</div>", unsafe_allow_html=True)
+                    ref_avg = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
+                    st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Snitt Gula Kort (Senaste 10): {ref_avg:.2f}</div>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Ingen historik hittad</div>", unsafe_allow_html=True)
             else:
                 st.markdown("<div class='referee-box'>⚖️ Domare: Okänd</div>", unsafe_allow_html=True)
-
-            # --- HÄR STARTAR AI CARD PREDICTIONS ---
-            st.markdown("<div class='section-header'>AI CARD PREDICTIONS</div>", unsafe_allow_html=True)
-            
-            # Hämta lagens snitt
-            h_card_avg = get_rolling_card_avg(h_team, df)
-            a_card_avg = get_rolling_card_avg(a_team, df)
-            
-            # Beräkning: (Lagsnitt + (Domarsnitt / 2)) / 2
-            # Vi viktar domaren som "halva ekvationen" mot lagets snitt
-            ref_weight = ref_avg_val / 2
-            h_pred = (h_card_avg + ref_weight) / 2
-            a_pred = (a_card_avg + ref_weight) / 2
-            
-            stat_comparison_row("AI FÖRVÄNTADE KORT", h_pred, a_pred)
-            
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if h_pred >= 2.0:
-                    st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div class='bet-box bad-bet'>❌ INGET BRA SPEL PÅ {h_team}</div>", unsafe_allow_html=True)
-            with col_b2:
-                if a_pred >= 2.0:
-                    st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div class='bet-box bad-bet'>❌ INGET BRA SPEL PÅ {a_team}</div>", unsafe_allow_html=True)
-            # --- SLUT AI CARD PREDICTIONS ---
 
             st.markdown("<h3 style='text-align:center; margin-top:20px; color:#333;'>SEASON AVERAGES COMPARISON</h3>", unsafe_allow_html=True)
             stat_comparison_row("MÅL / MATCH", h_hist['response.goals.home'].mean(), a_hist['response.goals.away'].mean())
@@ -351,14 +315,24 @@ if df is not None:
                                                 {a_name} <span class="pos-tag">{a_pos}</span>
                                             </div>
                                         </div>
+                                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 5px; padding-top: 4px; border-top: 1px solid #fcfcfc;">
+                                            <div style="width:100px;"></div>
+                                            <div style="flex:1; text-align:right; padding-right: 22px;">
+                                                <span style="font-size: 0.75rem; color: {h_color}; font-weight:bold;"><span style="color: #e6b800;">🟨</span> {h_avg:.2f}</span>
+                                            </div>
+                                            <div style="width:69px;"></div>
+                                            <div style="flex:1; text-align:left; padding-left: 22px;">
+                                                <span style="font-size: 0.75rem; color: {a_color}; font-weight:bold;"><span style="color: #e6b800;">🟨</span> {a_avg:.2f}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 """, unsafe_allow_html=True)
                             with col_btn:
+                                st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
                                 if st.button("Analys", key=f"btn_la_{idx}", use_container_width=True):
                                     st.session_state.selected_match = r
                                     st.session_state.view_mode = "match_detail"
                                     st.rerun()
-
         with tab3:
             st.header("⚖️ Domaranalys")
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["Domare: Okänd", "0", "Okänd", "nan"]])
@@ -369,6 +343,7 @@ if df is not None:
                 ref_df = df if sel_ref_season == "Alla" else df[df['Säsong'] == sel_ref_season]
                 r_df = ref_df[ref_df['ref_clean'] == sel_ref]
                 if not r_df.empty:
+                    st.markdown(f"<div class='section-header'>Statistik för {sel_ref}</div>", unsafe_allow_html=True)
                     m_count = len(r_df); gula_tot = r_df['Gula kort Hemma'].sum() + r_df['Gula Kort Borta'].sum()
                     d1, d2 = st.columns(2)
                     d1.metric("Antal Matcher", m_count); d2.metric("Gula Kort (Snitt)", round(gula_tot / m_count, 2) if m_count > 0 else 0)
