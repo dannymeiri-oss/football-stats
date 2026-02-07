@@ -110,7 +110,7 @@ def get_rolling_goals_stats(team_name, full_df, n=20):
 
 def format_referee(name):
     if not name or pd.isna(name) or str(name).strip() in ["0", "Okänd", "nan", "None"]:
-        return None
+        return "Domare: Okänd"
     name = str(name).split(',')[0].strip()
     parts = name.split()
     if len(parts) >= 2:
@@ -208,7 +208,7 @@ if df is not None:
             # Statistikrad 2 (ODDS OCH DOMARE)
             ref_avg_val = 0.0
             display_ref = "N/A"
-            if referee_name:
+            if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
@@ -224,7 +224,7 @@ if df is not None:
             o1.metric("Komb-odds (Ö1.5 Kort)", f"{comb_odds}")
             o2.metric("BLGM Odds", f"{dummy_odd_btts}")
             o3.metric("Hörnor Odds (Ö11.5)", f"{dummy_odd_corn}")
-            o4.metric(f"Domare ({referee_name if referee_name else 'N/A'})", display_ref)
+            o4.metric(f"Domare ({referee_name if referee_name != 'Domare: Okänd' else 'Okänd'})", display_ref)
 
             # --- AI PREDICTIONS ---
             st.markdown("<div class='section-header'>🤖 DEEP STATS AI PREDICTION (L20)</div>", unsafe_allow_html=True)
