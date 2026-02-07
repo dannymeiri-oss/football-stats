@@ -31,6 +31,7 @@ st.markdown("""
     .bet-box { padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; font-size: 0.9rem; }
     .good-bet { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
     .bad-bet { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+    .ai-text-box { background-color: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196F3; margin: 15px 0; font-style: italic; color: #333; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -169,44 +170,57 @@ if df is not None:
             m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else "N/A")
             
-            # --- DOMARE & ANALYS ---
-            ref_avg_val = 4.0 # Default value if referee unknown
+            ref_avg_val = 4.0 # Baseline om domare saknas
             if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
                     st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Snitt Gula Kort (Senaste 10): {ref_avg_val:.2f}</div>", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Ingen historik hittad</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Ingen historik hittad (Använder ligasnitt)</div>", unsafe_allow_html=True)
             else:
                 st.markdown("<div class='referee-box'>⚖️ Domare: Okänd</div>", unsafe_allow_html=True)
 
-            # --- AI CARD PREDICTIONS (INSATT HÄR) ---
-            st.markdown("<div class='section-header'>🤖 AI CARD PREDICTIONS</div>", unsafe_allow_html=True)
+            # --- AI CARD PREDICTIONS START ---
+            st.markdown("<div class='section-header'>🤖 AI MATCH PREDICTION</div>", unsafe_allow_html=True)
             
-            # Hämta lagens snitt
-            h_card_avg = get_rolling_card_avg(h_team, df)
-            a_card_avg = get_rolling_card_avg(a_team, df)
+            # 1. Hämta lagens och domarens data
+            h_card_avg = get_rolling_card_avg(h_team, df, n=10)
+            a_card_avg = get_rolling_card_avg(a_team, df, n=10)
             
-            # Beräkna prediktion: (Lagsnitt + (Domarsnitt / 2)) / 2
-            ref_weight = ref_avg_val / 2
-            h_pred = (h_card_avg + ref_weight) / 2
-            a_pred = (a_card_avg + ref_weight) / 2
+            # 2. Beräkna prediktioner (Total och per lag)
+            # Formel: Viktad snitt där domaren påverkar 40% och lagens gemensamma historik 60%
+            match_intensity = (h_card_avg + a_card_avg) 
+            total_predicted = (match_intensity * 0.6) + (ref_avg_val * 0.4)
             
-            stat_comparison_row("AI FÖRVÄNTADE KORT", h_pred, a_pred)
+            h_pred = (h_card_avg * 0.6) + (ref_avg_val * 0.2) # Hemmalagets förväntade
+            a_pred = (a_card_avg * 0.6) + (ref_avg_val * 0.2) # Bortalagets förväntade
+
+            # 3. Generera AI-Slutsats (Text)
+            ai_conclusion = ""
+            if total_predicted >= 5.5:
+                ai_conclusion = f"🔥 **Hög intensitet förväntas!** Både {h_team} och {a_team} har visat aggressiva tendenser på sistone. Med en domare som snittar {ref_avg_val:.1f} kort pekar all data på en stökig match med många avbrott. Överspel på kort är högst intressant."
+            elif total_predicted >= 4.0:
+                ai_conclusion = f"⚠️ **Medelhög intensitet.** {h_team} drar på sig en del kort, men {a_team} kan spela mer disciplinerat. Domaren ligger på en normal nivå. Förvänta dig en fysisk match men kanske inte ett kortregn, om inte matchen spårar ur tidigt."
+            else:
+                ai_conclusion = f"✅ **Lugn matchbild?** Statistiken visar att dessa lag oftast håller sig i skinnet. Domaren är också relativt tillåtande. Det finns risk för lågt tempo och få kort, så undvik höga linjer här."
+
+            # 4. Visualisering
+            col_pred1, col_pred2, col_pred3 = st.columns(3)
+            col_pred1.metric("Hemmalag (xCards)", f"{h_pred:.2f}")
+            col_pred2.metric("TOTALT (xCards)", f"{total_predicted:.2f}")
+            col_pred3.metric("Bortalag (xCards)", f"{a_pred:.2f}")
+
+            st.markdown(f"<div class='ai-text-box'><b>🎙️ AI-Slutsats:</b><br>{ai_conclusion}</div>", unsafe_allow_html=True)
             
-            ai_c1, ai_c2 = st.columns(2)
-            with ai_c1:
-                if h_pred >= 2.0:
-                    st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div class='bet-box bad-bet'>❌ INGET BRA SPEL PÅ {h_team}</div>", unsafe_allow_html=True)
-            with ai_c2:
-                if a_pred >= 2.0:
-                    st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div class='bet-box bad-bet'>❌ INGET BRA SPEL PÅ {a_team}</div>", unsafe_allow_html=True)
-            # --- SLUT AI CARD PREDICTIONS ---
+            col_b1, col_b2 = st.columns(2)
+            with col_b1:
+                if h_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
+                else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {h_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
+            with col_b2:
+                if a_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
+                else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
+            # --- AI CARD PREDICTIONS SLUT ---
 
             st.markdown("<h3 style='text-align:center; margin-top:20px; color:#333;'>SEASON AVERAGES COMPARISON</h3>", unsafe_allow_html=True)
             stat_comparison_row("MÅL / MATCH", h_hist['response.goals.home'].mean(), a_hist['response.goals.away'].mean())
@@ -320,6 +334,11 @@ if df is not None:
                             c1.metric("Mål", round(a_df['response.goals.away'].mean(), 2)); c2.metric("xG", round(a_df['xG Borta'].mean(), 2))
                             c1.metric("Bollinnehav", f"{int(a_df['Bollinnehav Borta'].mean())}%"); c2.metric("Hörnor", round(a_df['Hörnor Borta'].mean(), 1))
                             c1.metric("Gula Kort", round(a_df['Gula Kort Borta'].mean(), 1)); c2.metric("Röda Kort", round(a_df['Röda kort Borta'].mean(), 2))
+                    
+                    # --- NYTT: DJUPANALYS MED ALLA DATAPUNKTER ---
+                    with st.expander("📂 Djupanalys (Alla Datapunkter)", expanded=False):
+                        st.dataframe(team_df.sort_values('datetime', ascending=False), use_container_width=True)
+
                     st.divider(); st.subheader(f"📅 Senaste 10 matcher för {sel_team}")
                     last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | (team_df['response.teams.away.name'] == sel_team)) & (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                     if not last_10.empty:
@@ -372,8 +391,6 @@ if df is not None:
                     
                     st.subheader("Matchhistorik - Gula Kort")
                     r_df_sorted = r_df.sort_values('datetime', ascending=False)
-                    
-                    # Visa varje match i rader istället för standard dataframe för färgstöd
                     for idx_r, row_r in r_df_sorted.iterrows():
                         h_c = row_r['Gula kort Hemma']
                         a_c = row_r['Gula Kort Borta']
