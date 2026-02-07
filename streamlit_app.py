@@ -27,7 +27,7 @@ st.markdown("""
     /* DOMARE INFO I H2H */
     .referee-box { text-align: center; background: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #ddd; margin-bottom: 20px; font-weight: bold; }
 
-    /* AI CARD PREDICTION BOXES */
+    /* NY CSS FÖR AI PREDICTIONS */
     .bet-box { padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin-top: 5px; font-size: 0.9rem; }
     .good-bet { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
     .bad-bet { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
@@ -169,47 +169,51 @@ if df is not None:
             m3.metric("Hörnor snitt", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt", round(h_hist['Gula kort Hemma'].mean() + a_hist['Gula Kort Borta'].mean(), 1) if not h_hist.empty else "N/A")
             
-            ref_avg = 0.0
+            # --- DOMARE & ANALYS ---
+            ref_avg_val = 4.0 # Default value if referee unknown
             if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
-                    ref_avg = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
-                    st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Snitt Gula Kort (Senaste 10): {ref_avg:.2f}</div>", unsafe_allow_html=True)
+                    ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
+                    st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Snitt Gula Kort (Senaste 10): {ref_avg_val:.2f}</div>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<div class='referee-box'>⚖️ Domare: {referee_name} | Ingen historik hittad</div>", unsafe_allow_html=True)
             else:
                 st.markdown("<div class='referee-box'>⚖️ Domare: Okänd</div>", unsafe_allow_html=True)
 
-            # --- AI CARD PREDICTIONS SEKTION ---
-            st.markdown("<div class='section-header'>AI CARD PREDICTIONS</div>", unsafe_allow_html=True)
+            # --- AI CARD PREDICTIONS (INSATT HÄR) ---
+            st.markdown("<div class='section-header'>🤖 AI CARD PREDICTIONS</div>", unsafe_allow_html=True)
+            
+            # Hämta lagens snitt
             h_card_avg = get_rolling_card_avg(h_team, df)
             a_card_avg = get_rolling_card_avg(a_team, df)
             
-            # Prediktionslogik
-            ref_weight = (ref_avg / 2) if ref_avg > 0 else 2.0
+            # Beräkna prediktion: (Lagsnitt + (Domarsnitt / 2)) / 2
+            ref_weight = ref_avg_val / 2
             h_pred = (h_card_avg + ref_weight) / 2
             a_pred = (a_card_avg + ref_weight) / 2
             
             stat_comparison_row("AI FÖRVÄNTADE KORT", h_pred, a_pred)
             
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
+            ai_c1, ai_c2 = st.columns(2)
+            with ai_c1:
                 if h_pred >= 2.0:
                     st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<div class='bet-box bad-bet'>❌ INGET BRA SPEL PÅ {h_team}</div>", unsafe_allow_html=True)
-            with col_b2:
+            with ai_c2:
                 if a_pred >= 2.0:
                     st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
                 else:
                     st.markdown(f"<div class='bet-box bad-bet'>❌ INGET BRA SPEL PÅ {a_team}</div>", unsafe_allow_html=True)
+            # --- SLUT AI CARD PREDICTIONS ---
 
             st.markdown("<h3 style='text-align:center; margin-top:20px; color:#333;'>SEASON AVERAGES COMPARISON</h3>", unsafe_allow_html=True)
             stat_comparison_row("MÅL / MATCH", h_hist['response.goals.home'].mean(), a_hist['response.goals.away'].mean())
             stat_comparison_row("EXPECTED GOALS (XG)", h_hist['xG Hemma'].mean(), a_hist['xG Borta'].mean())
             stat_comparison_row("BOLLINNEHAV", h_hist['Bollinnehav Hemma'].mean(), h_hist['Bollinnehav Borta'].mean(), is_pct=True, precision=0)
             stat_comparison_row("HÖRNOR / MATCH", h_hist['Hörnor Hemma'].mean(), a_hist['Hörnor Borta'].mean(), precision=1)
-            stat_comparison_row("GULA KORT / MATCH", h_hist['Gula kort Hemma'].mean(), h_hist['Gula Kort Borta'].mean(), precision=1)
+            stat_comparison_row("GULA KORT / MATCH", h_hist['Gula kort Hemma'].mean(), a_hist['Gula Kort Borta'].mean(), precision=1)
             stat_comparison_row("RÖDA KORT / MATCH", h_hist['Röda kort Hemma'].mean(), h_hist['Röda kort Borta'].mean(), precision=2)
             
             st.markdown("<br>### ⚔️ Senaste inbördes möten", unsafe_allow_html=True)
@@ -352,7 +356,6 @@ if df is not None:
                                     st.session_state.selected_match = r
                                     st.session_state.view_mode = "match_detail"
                                     st.rerun()
-
         with tab3:
             st.header("⚖️ Domaranalys")
             refs = sorted([r for r in df['ref_clean'].unique() if r not in ["Domare: Okänd", "0", "Okänd", "nan"]])
@@ -366,9 +369,30 @@ if df is not None:
                     m_count = len(r_df); gula_tot = r_df['Gula kort Hemma'].sum() + r_df['Gula Kort Borta'].sum()
                     d1, d2 = st.columns(2)
                     d1.metric("Antal Matcher", m_count); d2.metric("Gula Kort (Snitt)", round(gula_tot / m_count, 2) if m_count > 0 else 0)
-                    for idx_r, row_r in r_df.sort_values('datetime', ascending=False).iterrows():
-                        st.markdown(f"<div class='match-row'>{row_r['Speltid']} | {row_r['response.teams.home.name']} {int(row_r['Gula kort Hemma'])}-{int(row_r['Gula Kort Borta'])} {row_r['response.teams.away.name']}</div>", unsafe_allow_html=True)
-
+                    
+                    st.subheader("Matchhistorik - Gula Kort")
+                    r_df_sorted = r_df.sort_values('datetime', ascending=False)
+                    
+                    # Visa varje match i rader istället för standard dataframe för färgstöd
+                    for idx_r, row_r in r_df_sorted.iterrows():
+                        h_c = row_r['Gula kort Hemma']
+                        a_c = row_r['Gula Kort Borta']
+                        h_col_style = "color: #28a745; font-weight: bold;" if h_c >= 2.0 else "color: black;"
+                        a_col_style = "color: #28a745; font-weight: bold;" if a_c >= 2.0 else "color: black;"
+                        
+                        st.markdown(f"""
+                            <div class="match-row">
+                                <div style="width:100px; font-size:0.8rem; color:gray;">{row_r['Speltid']}</div>
+                                <div style="flex:1; text-align:right;">{row_r['response.teams.home.name']}</div>
+                                <div style="margin:0 15px; background:#f0f0f0; padding:2px 10px; border-radius:4px; display:flex; gap:10px;">
+                                    <span style="{h_col_style}">{int(h_c)}</span>
+                                    <span style="color:#ccc;">-</span>
+                                    <span style="{a_col_style}">{int(a_c)}</span>
+                                </div>
+                                <div style="flex:1; text-align:left;">{row_r['response.teams.away.name']}</div>
+                                <div style="width:30px; text-align:center;">🟨</div>
+                            </div>
+                        """, unsafe_allow_html=True)
         with tab4:
             st.header("🏆 Ligatabell")
             if standings_df is not None:
@@ -377,31 +401,52 @@ if df is not None:
                 sel_league_stand = st.selectbox("Välj liga:", available_leagues, key="stand_sel")
                 display_table = standings_df[standings_df[liga_col] == sel_league_stand].copy()
                 st.dataframe(display_table.iloc[:, 1:], use_container_width=True, hide_index=True)
-
+            else: st.info("Ingen tabell hittades.")
         with tab5:
             st.header("📊 Topplista")
             top_cat = st.radio("Välj kategori:", ["Lag", "Domare", "Heta Kortmatcher (Kommande)"], horizontal=True)
+            c1, c2 = st.columns(2)
+            with c1: num_matches = st.slider("Antal senaste matcher (Kriterium):", 1, 20, 5)
+            with c2: 
+                all_leagues = ["Alla"] + sorted(df['response.league.name'].unique().tolist()) if 'response.league.name' in df.columns else ["Alla"]
+                sel_league = st.selectbox("Välj liga:", all_leagues, key="top_league_filter")
+            filtered_df = df[df['response.fixture.status.short'] == 'FT']
+            if sel_league != "Alla":
+                filtered_df = filtered_df[filtered_df['response.league.name'] == sel_league]
             if top_cat == "Lag":
                 team_stats = []
-                teams = sorted(pd.concat([df['response.teams.home.name'], df['response.teams.away.name']]).unique())
+                teams = sorted(pd.concat([filtered_df['response.teams.home.name'], filtered_df['response.teams.away.name']]).unique())
                 for t in teams:
-                    t_avg = get_rolling_card_avg(t, df, n=10)
-                    team_stats.append({'Lag': t, 'Snitt Kort': round(t_avg, 2)})
-                st.dataframe(pd.DataFrame(team_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
+                    t_avg = get_rolling_card_avg(t, df, n=num_matches)
+                    team_stats.append({'Lag': t, 'Snitt Kort': round(t_avg, 2), 'Matcher': num_matches})
+                if team_stats: st.dataframe(pd.DataFrame(team_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
             elif top_cat == "Domare":
                 ref_stats = []
-                for r in df['ref_clean'].unique():
-                    if "Okänd" in r: continue
-                    r_m = df[df['ref_clean'] == r]
-                    if len(r_m) >= 5:
-                        avg = (r_m['Gula kort Hemma'].sum() + r_m['Gula Kort Borta'].sum()) / len(r_m)
-                        ref_stats.append({'Domare': r, 'Snitt Kort': round(avg, 2)})
-                st.dataframe(pd.DataFrame(ref_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
-            elif top_cat == "Heta Kortmatcher (Kommande)":
+                for r in filtered_df['ref_clean'].unique():
+                    if r in ["Domare: Okänd", "0", "Okänd", "nan"]: continue
+                    r_matches = filtered_df[filtered_df['ref_clean'] == r].sort_values('datetime', ascending=False)
+                    if len(r_matches) >= num_matches:
+                        recent = r_matches.head(num_matches)
+                        avg = (recent['Gula kort Hemma'].sum() + recent['Gula Kort Borta'].sum()) / len(recent)
+                        ref_stats.append({'Domare': r, 'Snitt Kort': round(avg, 2), 'Matcher': len(recent)})
+                if ref_stats: st.dataframe(pd.DataFrame(ref_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
+            else:
                 upcoming = df[df['response.fixture.status.short'] == 'NS'].sort_values('datetime', ascending=True)
-                results = []
-                for _, row in upcoming.head(20).iterrows():
-                    h_a = get_rolling_card_avg(row['response.teams.home.name'], df)
-                    a_a = get_rolling_card_avg(row['response.teams.away.name'], df)
-                    results.append({'Match': f"{row['response.teams.home.name']} - {row['response.teams.away.name']}", 'Kortstyrka': round(h_a+a_a, 2)})
-                st.table(pd.DataFrame(results).sort_values('Kortstyrka', ascending=False))
+                now_check = datetime.now().replace(tzinfo=None)
+                end_check = now_check + timedelta(days=7)
+                upcoming = upcoming[(upcoming['datetime'] >= now_check) & (upcoming['datetime'] <= end_check)]
+                if sel_league != "Alla": upcoming = upcoming[upcoming['response.league.name'] == sel_league]
+                analysis_results = []
+                for _, row in upcoming.iterrows():
+                    h_team, a_team = row['response.teams.home.name'], row['response.teams.away.name']
+                    h_avg = get_rolling_card_avg(h_team, df, n=num_matches)
+                    a_avg = get_rolling_card_avg(a_team, df, n=num_matches)
+                    ref_avg_val = "N/A"
+                    if row['ref_clean'] not in ["Domare: Okänd", "0", "Okänd", "nan"]:
+                        r_matches = filtered_df[filtered_df['ref_clean'] == row['ref_clean']].sort_values('datetime', ascending=False).head(num_matches)
+                        if not r_matches.empty:
+                            ref_avg_val = round((r_matches['Gula kort Hemma'].sum() + r_matches['Gula Kort Borta'].sum()) / len(r_matches), 2)
+                    analysis_results.append({'Match': f"{h_team} vs {a_team}", 'Kombinerat (Lagen)': round(h_avg + a_avg, 2), 'Domare (Snitt)': ref_avg_val, 'Liga': row['response.league.name']})
+                if analysis_results: st.dataframe(pd.DataFrame(analysis_results).sort_values('Kombinerat (Lagen)', ascending=False), use_container_width=True, hide_index=True)
+else:
+    st.error("Kunde inte ladda data.")
