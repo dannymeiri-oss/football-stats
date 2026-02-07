@@ -57,84 +57,59 @@ def load_data(url):
         return data
     except: return None
 
-# --- API FOOTBALL INTEGRATION ---
+# --- API ODDS HÄMTNING VIA FIXTURE ID ---
 @st.cache_data(ttl=600)
-def get_api_odds(home_team, away_team):
-    """
-    Hämtar odds från API-Football. 
-    Returnerar odds för: BLGM, Hörnor Ö11.5, och kombinerat kort-odds om möjligt.
-    """
-    res = {"btts": "-", "corners": "-", "cards_combo": "-"}
+def get_odds_by_fixture_id(fixture_id):
+    """Hämtar odds direkt via fixture_id från API-Football."""
+    res = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
     
+    if not fixture_id or pd.isna(fixture_id):
+        return res
+
     headers = {
         'x-rapidapi-host': "v3.football.api-sports.io",
         'x-apisports-key': API_KEY
     }
     
     try:
-        # 1. Hitta Fixture ID (Sök på hemmalaget)
-        # Vi städar namnet lite för bättre träffsäkerhet
-        clean_home = home_team.replace(" FC", "").replace(" FK", "").strip()
-        search_url = f"{API_BASE_URL}/fixtures?search={clean_home}&next=1"
+        # Eftersom vi har ID:t kan vi gå direkt till odds endpointen
+        # Konvertera till int för att ta bort eventuella decimaler från Excel (t.ex. 12345.0 -> 12345)
+        fid = int(float(fixture_id))
+        url = f"{API_BASE_URL}/odds?fixture={fid}"
         
-        r_fix = requests.get(search_url, headers=headers, timeout=5)
-        if r_fix.status_code != 200: return res
+        r = requests.get(url, headers=headers, timeout=5)
+        data = r.json()
         
-        data_fix = r_fix.json()
-        fixture_id = None
+        if not data.get('response'):
+            res["debug"] = "Inga odds publicerade än."
+            return res
+            
+        # Hämta första bästa bookmaker (Helst Bet365 ID=1)
+        bookmakers = data['response'][0]['bookmakers']
+        bookie = next((b for b in bookmakers if b['id'] == 1), bookmakers[0])
         
-        # Verifiera att bortalaget matchar
-        clean_away = away_team.replace(" FC", "").replace(" FK", "").split(' ')[0]
-        
-        for f in data_fix.get('response', []):
-            away_api = f['teams']['away']['name']
-            if clean_away.lower() in away_api.lower():
-                fixture_id = f['fixture']['id']
-                break
-        
-        if not fixture_id: return res
-
-        # 2. Hämta Odds för fixturen
-        odds_url = f"{API_BASE_URL}/odds?fixture={fixture_id}"
-        r_odds = requests.get(odds_url, headers=headers, timeout=5)
-        data_odds = r_odds.json()
-        
-        if not data_odds.get('response'): return res
-        
-        # Vi tar första tillgängliga bookmaker (oftast Bet365 ID 1)
-        bookmakers = data_odds['response'][0]['bookmakers']
-        if not bookmakers: return res
-        
-        bets = bookmakers[0]['bets']
-        
-        home_card_odd = None
-        away_card_odd = None
-        
-        for bet in bets:
+        for bet in bookie['bets']:
             # BLGM (ID 8)
-            if bet['id'] == 8: # Both Teams To Score
-                for val in bet['values']:
-                    if val['value'] == "Yes": res["btts"] = val['odd']
+            if bet['id'] == 8:
+                for v in bet['values']:
+                    if v['value'] == "Yes": res["btts"] = v['odd']
             
             # Hörnor (ID 15) - Total Corners
-            if bet['id'] == 15: 
-                for val in bet['values']:
-                    # Vi letar efter linan 11.5 eller närmaste (t.ex. Over 11.5)
-                    if "Over 11.5" in val['value']:
-                        res["corners"] = val['odd']
+            if "Corners" in bet['name']: 
+                for v in bet['values']:
+                    # Vi letar efter linan 11.5
+                    if "11.5" in v['value'] and "Over" in v['value']:
+                        res["corners"] = v['odd']
             
-            # Kort (Specialare - oftast inte standard ID)
-            # Vi letar efter "Home Team Cards" eller liknande om det finns, annars Total
-            # Alternativt "Cards Over/Under" (ID 45 brukar vara Total)
-            # För att simulera "Över 1.5 per lag" tittar vi om vi hittar specifika lagspel eller totalen
-            if "Cards" in bet['name']:
-                for val in bet['values']:
-                    # Fallback: Om vi hittar Total Cards Over 3.5 eller 4.5 är det en proxy
-                    if "Over 3.5" in val['value'] or "Over 4.5" in val['value']:
-                         if res["cards_combo"] == "-": res["cards_combo"] = f"~{val['odd']} (Tot)"
+            # Kort - Total Cards (ID varierar, ofta ~45)
+            # Vi letar efter en lina runt 3.5 eller 4.5 som proxy för kortintensitet
+            if "Cards" in bet['name'] and "Total" in bet['name']:
+                for v in bet['values']:
+                    if ("3.5" in v['value'] or "4.5" in v['value']) and "Over" in v['value']:
+                        res["cards"] = f"{v['odd']} (Tot)"
 
     except Exception as e:
-        pass
+        res["debug"] = f"Fel: {str(e)}"
         
     return res
 
@@ -221,12 +196,17 @@ def clean_stats(data):
         'response.goals.home', 'response.goals.away',
         'Skott utanför Hemma', 'Skott utanför Borta', 'Blockerade skott Hemma', 'Blockerade skott Borta',
         'Skott i straffområdet Hemma', 'Skott i straffområdet Borta', 'Skott utanför straffområdet Hemma', 'Skott utanför straffområdet Borta',
-        'Passningar totalt Hemma', 'Passningar totalt Borta'
+        'Passningar totalt Hemma', 'Passningar totalt Borta',
+        'response.fixture.id' # Se till att ID finns med
     ]
     for col in needed_cols:
         if col not in data.columns: data[col] = 0.0
         else:
-            data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
+            # Undvik att konvertera fixture.id till 0.0 om det är ett ID
+            if col == 'response.fixture.id':
+                data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
+            else:
+                data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
     data['ref_clean'] = data.get('response.fixture.referee', "Okänd").apply(format_referee)
     data['Speltid'] = data['datetime'].dt.strftime('%d %b %Y')
     return data
@@ -300,11 +280,14 @@ if df is not None:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
                     display_ref = f"{ref_avg_val:.2f}"
             
-            # --- HÄMTA API ODDS ---
-            odds_data = get_api_odds(h_team, a_team)
-            
+            # --- HÄMTA ODDS (NY FUNKTION) ---
+            # Vi hämtar odds endast för kommande matcher där Fixture ID finns
+            odds_data = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
+            if m['response.fixture.status.short'] == 'NS' and 'response.fixture.id' in m:
+                odds_data = get_odds_by_fixture_id(m['response.fixture.id'])
+
             o1, o2, o3, o4 = st.columns(4)
-            o1.metric("Komb-odds (Kort)", odds_data["cards_combo"])
+            o1.metric("Marknads-odds (Kort)", odds_data["cards"])
             o2.metric("BLGM Odds", odds_data["btts"])
             o3.metric("Hörnor Odds (Ö11.5)", odds_data["corners"])
             o4.metric(f"Domare ({referee_name if referee_name != 'Domare: Okänd' else 'Okänd'})", display_ref)
@@ -376,14 +359,14 @@ if df is not None:
             c2.metric("TOTALT (xCards)", f"{total_cards_pred:.2f}")
             c3.metric("Bortalag (xCards)", f"{a_card_pred:.2f}")
             
-            # Kort-boxar (Använder nu hämtade odds eller "-")
+            # Kort-boxar
             col_b1, col_b2 = st.columns(2)
             with col_b1:
-                st.markdown(f"<div class='odds-label'>Marknads Odds</div><div class='odds-value'>{odds_data['cards_combo']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='odds-label'>Marknads Odds</div><div class='odds-value'>{odds_data['cards']}</div>", unsafe_allow_html=True)
                 if h_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {h_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
             with col_b2:
-                st.markdown(f"<div class='odds-label'>Marknads Odds</div><div class='odds-value'>{odds_data['cards_combo']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='odds-label'>Marknads Odds</div><div class='odds-value'>{odds_data['cards']}</div>", unsafe_allow_html=True)
                 if a_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
 
