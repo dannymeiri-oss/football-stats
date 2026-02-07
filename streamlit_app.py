@@ -207,25 +207,40 @@ if df is not None:
                 l_name = r['response.league.name']
                 h_pos = get_team_pos(h_name, l_name, standings_df)
                 a_pos = get_team_pos(a_name, l_name, standings_df)
+                h_cards = int(r['Gula kort Hemma'])
+                a_cards = int(r['Gula Kort Borta'])
                 
                 col_info, col_btn = st.columns([4.5, 1.5])
                 with col_info:
                     score = "VS" if mode == "Nästa matcher" else f"{int(r['response.goals.home'])} - {int(r['response.goals.away'])}"
                     st.markdown(f"""
-                        <div class="match-row">
-                            <div style="width:130px; font-size:0.8em; color:gray;">{r['Speltid']}</div>
-                            <div style="flex:1; text-align:right; font-weight:bold;">
-                                <span class="pos-tag">{h_pos}</span> {h_name} 
-                                <img src="{r['response.teams.home.logo']}" width="20">
+                        <div class="match-row" style="flex-direction: column; align-items: stretch; padding: 10px 15px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <div style="width:130px; font-size:0.8em; color:gray;">{r['Speltid']}</div>
+                                <div style="flex:1; text-align:right; font-weight:bold;">
+                                    <span class="pos-tag">{h_pos}</span> {h_name} 
+                                    <img src="{r['response.teams.home.logo']}" width="20">
+                                </div>
+                                <div style="background:#222; color:white; padding:2px 10px; margin:0 10px; border-radius:4px; min-width:50px; text-align:center;">{score}</div>
+                                <div style="flex:1; text-align:left; font-weight:bold;">
+                                    <img src="{r['response.teams.away.logo']}" width="20"> 
+                                    {a_name} <span class="pos-tag">{a_pos}</span>
+                                </div>
                             </div>
-                            <div style="background:#222; color:white; padding:2px 10px; margin:0 10px; border-radius:4px; min-width:50px; text-align:center;">{score}</div>
-                            <div style="flex:1; text-align:left; font-weight:bold;">
-                                <img src="{r['response.teams.away.logo']}" width="20"> 
-                                {a_name} <span class="pos-tag">{a_pos}</span>
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 5px; padding-top: 4px; border-top: 1px solid #fcfcfc;">
+                                <div style="width:130px;"></div>
+                                <div style="flex:1; text-align:right; padding-right: 25px;">
+                                    <span style="font-size: 0.75rem; color: #777;"><span style="color: #e6b800;">🟨</span> {h_cards}</span>
+                                </div>
+                                <div style="width:70px;"></div>
+                                <div style="flex:1; text-align:left; padding-left: 25px;">
+                                    <span style="font-size: 0.75rem; color: #777;"><span style="color: #e6b800;">🟨</span> {a_cards}</span>
+                                </div>
                             </div>
                         </div>
                     """, unsafe_allow_html=True)
                 with col_btn:
+                    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
                     if st.button("H2H" if mode == "Nästa matcher" else "Analys", key=f"btn_m_{idx}", use_container_width=True):
                         st.session_state.selected_match = r
                         st.session_state.view_mode = "h2h_detail" if mode == "Nästa matcher" else "match_detail"
@@ -297,10 +312,12 @@ if df is not None:
                                             </div>
                                         </div>
                                         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 5px; padding-top: 4px; border-top: 1px solid #fcfcfc;">
-                                            <div style="width:100px;"></div> <div style="flex:1; text-align:right; padding-right: 22px;">
+                                            <div style="width:100px;"></div>
+                                            <div style="flex:1; text-align:right; padding-right: 22px;">
                                                 <span style="font-size: 0.75rem; color: #777;"><span style="color: #e6b800;">🟨</span> {h_cards}</span>
                                             </div>
-                                            <div style="width:69px;"></div> <div style="flex:1; text-align:left; padding-left: 22px;">
+                                            <div style="width:69px;"></div>
+                                            <div style="flex:1; text-align:left; padding-left: 22px;">
                                                 <span style="font-size: 0.75rem; color: #777;"><span style="color: #e6b800;">🟨</span> {a_cards}</span>
                                             </div>
                                         </div>
