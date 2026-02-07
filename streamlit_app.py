@@ -59,6 +59,22 @@ def get_team_pos(team_name, league_name, standings):
     except: pass
     return ""
 
+def get_rolling_card_avg(team_name, full_df, n=10):
+    # Filtrera på spelade matcher för laget
+    team_matches = full_df[((full_df['response.teams.home.name'] == team_name) | 
+                            (full_df['response.teams.away.name'] == team_name)) & 
+                           (full_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(n)
+    
+    if team_matches.empty: return 0.0
+    
+    cards = []
+    for _, r in team_matches.iterrows():
+        if r['response.teams.home.name'] == team_name:
+            cards.append(r['Gula kort Hemma'])
+        else:
+            cards.append(r['Gula Kort Borta'])
+    return sum(cards) / len(cards)
+
 def format_referee(name):
     if not name or pd.isna(name) or str(name).strip() in ["0", "Okänd", "nan", "None"]:
         return "Domare: Okänd"
@@ -207,8 +223,10 @@ if df is not None:
                 l_name = r['response.league.name']
                 h_pos = get_team_pos(h_name, l_name, standings_df)
                 a_pos = get_team_pos(a_name, l_name, standings_df)
-                h_cards = int(r['Gula kort Hemma'])
-                a_cards = int(r['Gula Kort Borta'])
+                
+                # Räkna ut snitt för de senaste 10 matcherna
+                h_avg = get_rolling_card_avg(h_name, df)
+                a_avg = get_rolling_card_avg(a_name, df)
                 
                 col_info, col_btn = st.columns([4.5, 1.5])
                 with col_info:
@@ -230,11 +248,11 @@ if df is not None:
                             <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 5px; padding-top: 4px; border-top: 1px solid #fcfcfc;">
                                 <div style="width:130px;"></div>
                                 <div style="flex:1; text-align:right; padding-right: 25px;">
-                                    <span style="font-size: 0.75rem; color: #777;"><span style="color: #e6b800;">🟨</span> {h_cards}</span>
+                                    <span style="font-size: 0.75rem; color: #777;">SNITT 10: <span style="color: #e6b800; font-weight:bold;">🟨 {h_avg:.2f}</span></span>
                                 </div>
                                 <div style="width:70px;"></div>
                                 <div style="flex:1; text-align:left; padding-left: 25px;">
-                                    <span style="font-size: 0.75rem; color: #777;"><span style="color: #e6b800;">🟨</span> {a_cards}</span>
+                                    <span style="font-size: 0.75rem; color: #777;">SNITT 10: <span style="color: #e6b800; font-weight:bold;">🟨 {a_avg:.2f}</span></span>
                                 </div>
                             </div>
                         </div>
@@ -271,8 +289,6 @@ if df is not None:
                             c1.metric("Mål", round(h_df['response.goals.home'].mean(), 2)); c2.metric("xG", round(h_df['xG Hemma'].mean(), 2))
                             c1.metric("Bollinnehav", f"{int(h_df['Bollinnehav Hemma'].mean())}%"); c2.metric("Hörnor", round(h_df['Hörnor Hemma'].mean(), 1))
                             c1.metric("Gula Kort", round(h_df['Gula kort Hemma'].mean(), 1)); c2.metric("Röda Kort", round(h_df['Röda kort Hemma'].mean(), 2))
-                            c1.metric("Skott på mål", round(h_df['Skott på mål Hemma'].mean(), 1)); c2.metric("Passningar", int(h_df['Passningar totalt Hemma'].mean()))
-                            c1.metric("Offside", round(h_df['Offside Hemma'].mean(), 1)); c2.metric("Fouls", round(h_df['Fouls Hemma'].mean(), 1))
                     with col_a:
                         st.markdown("<div class='section-header'>✈️ Borta</div>", unsafe_allow_html=True)
                         if not a_df.empty:
@@ -280,8 +296,6 @@ if df is not None:
                             c1.metric("Mål", round(a_df['response.goals.away'].mean(), 2)); c2.metric("xG", round(a_df['xG Borta'].mean(), 2))
                             c1.metric("Bollinnehav", f"{int(a_df['Bollinnehav Borta'].mean())}%"); c2.metric("Hörnor", round(a_df['Hörnor Borta'].mean(), 1))
                             c1.metric("Gula Kort", round(a_df['Gula Kort Borta'].mean(), 1)); c2.metric("Röda Kort", round(a_df['Röda kort Borta'].mean(), 2))
-                            c1.metric("Skott på mål", round(a_df['Skott på mål Borta'].mean(), 1)); c2.metric("Passningar", int(a_df['Passningar totalt Borta'].mean()))
-                            c1.metric("Offside", round(a_df['Offside Borta'].mean(), 1)); c2.metric("Fouls", round(a_df['Fouls Borta'].mean(), 1))
                     
                     st.divider(); st.subheader(f"📅 Senaste 10 matcher för {sel_team}")
                     last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | (team_df['response.teams.away.name'] == sel_team)) & (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
@@ -291,8 +305,10 @@ if df is not None:
                             l_name = r['response.league.name']
                             h_pos = get_team_pos(h_name, l_name, standings_df)
                             a_pos = get_team_pos(a_name, l_name, standings_df)
-                            h_cards = int(r['Gula kort Hemma'])
-                            a_cards = int(r['Gula Kort Borta'])
+                            
+                            # Rullande snitt för de här lagen vid tillfället
+                            h_avg = get_rolling_card_avg(h_name, df)
+                            a_avg = get_rolling_card_avg(a_name, df)
                             
                             col_info, col_btn = st.columns([4.5, 1.5])
                             with col_info:
@@ -314,11 +330,11 @@ if df is not None:
                                         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 5px; padding-top: 4px; border-top: 1px solid #fcfcfc;">
                                             <div style="width:100px;"></div>
                                             <div style="flex:1; text-align:right; padding-right: 22px;">
-                                                <span style="font-size: 0.75rem; color: #777;"><span style="color: #e6b800;">🟨</span> {h_cards}</span>
+                                                <span style="font-size: 0.75rem; color: #777;">SNITT 10: <span style="color: #e6b800; font-weight:bold;">🟨 {h_avg:.2f}</span></span>
                                             </div>
                                             <div style="width:69px;"></div>
                                             <div style="flex:1; text-align:left; padding-left: 22px;">
-                                                <span style="font-size: 0.75rem; color: #777;"><span style="color: #e6b800;">🟨</span> {a_cards}</span>
+                                                <span style="font-size: 0.75rem; color: #777;">SNITT 10: <span style="color: #e6b800; font-weight:bold;">🟨 {a_avg:.2f}</span></span>
                                             </div>
                                         </div>
                                     </div>
@@ -374,11 +390,8 @@ if df is not None:
                 team_stats = []
                 teams = sorted(pd.concat([filtered_df['response.teams.home.name'], filtered_df['response.teams.away.name']]).unique())
                 for t in teams:
-                    t_matches = filtered_df[(filtered_df['response.teams.home.name'] == t) | (filtered_df['response.teams.away.name'] == t)].sort_values('datetime', ascending=False)
-                    if len(t_matches) >= num_matches:
-                        recent = t_matches.head(num_matches)
-                        cards = [row['Gula kort Hemma'] if row['response.teams.home.name'] == t else row['Gula Kort Borta'] for _, row in recent.iterrows()]
-                        team_stats.append({'Lag': t, 'Snitt Kort': round(sum(cards)/len(cards), 2), 'Matcher': len(cards)})
+                    t_avg = get_rolling_card_avg(t, df, n=num_matches)
+                    team_stats.append({'Lag': t, 'Snitt Kort': round(t_avg, 2), 'Matcher': num_matches})
                 if team_stats: st.dataframe(pd.DataFrame(team_stats).sort_values('Snitt Kort', ascending=False), use_container_width=True, hide_index=True)
 
             elif top_cat == "Domare":
@@ -402,10 +415,8 @@ if df is not None:
                 analysis_results = []
                 for _, row in upcoming.iterrows():
                     h_team, a_team = row['response.teams.home.name'], row['response.teams.away.name']
-                    h_matches = filtered_df[(filtered_df['response.teams.home.name'] == h_team) | (filtered_df['response.teams.away.name'] == h_team)].sort_values('datetime', ascending=False).head(num_matches)
-                    h_avg = sum([r['Gula kort Hemma'] if r['response.teams.home.name'] == h_team else r['Gula Kort Borta'] for _, r in h_matches.iterrows()]) / len(h_matches) if not h_matches.empty else 0
-                    a_matches = filtered_df[(filtered_df['response.teams.home.name'] == a_team) | (filtered_df['response.teams.away.name'] == a_team)].sort_values('datetime', ascending=False).head(num_matches)
-                    a_avg = sum([r['Gula kort Hemma'] if r['response.teams.home.name'] == a_team else r['Gula Kort Borta'] for _, r in a_matches.iterrows()]) / len(a_matches) if not a_matches.empty else 0
+                    h_avg = get_rolling_card_avg(h_team, df, n=num_matches)
+                    a_avg = get_rolling_card_avg(a_team, df, n=num_matches)
                     
                     ref_avg_val = "N/A"
                     if row['ref_clean'] not in ["Domare: Okänd", "0", "Okänd", "nan"]:
