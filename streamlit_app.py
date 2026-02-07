@@ -125,7 +125,6 @@ if df is not None:
         l_name = m['response.league.name']
         referee_name = m['ref_clean']
         
-        # Hämtar positioner för headern
         h_pos = get_team_pos(h_team, l_name, standings_df)
         a_pos = get_team_pos(a_team, l_name, standings_df)
 
@@ -275,7 +274,17 @@ if df is not None:
                     last_10 = team_df[((team_df['response.teams.home.name'] == sel_team) | (team_df['response.teams.away.name'] == sel_team)) & (team_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                     if not last_10.empty:
                         l10_display = last_10.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
-                        st.dataframe(l10_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
+                        # PERFEKT LAYOUT FÖR HISTORIK
+                        st.dataframe(
+                            l10_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']],
+                            column_config={
+                                "Speltid": "Datum",
+                                "Mål H": st.column_config.NumberColumn("H", format="%d"),
+                                "Mål B": st.column_config.NumberColumn("B", format="%d"),
+                            },
+                            use_container_width=True, 
+                            hide_index=True
+                        )
 
         with tab3:
             st.header("⚖️ Domaranalys")
