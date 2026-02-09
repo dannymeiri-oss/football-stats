@@ -14,6 +14,7 @@ DB_FILE = "bet_history.csv"
 # Initiera session state
 if 'ai_threshold' not in st.session_state: st.session_state.ai_threshold = 2.5
 if 'btts_threshold' not in st.session_state: st.session_state.btts_threshold = 2.5
+if 'scanned_matches' not in st.session_state: st.session_state.scanned_matches = [] # För att spara listan
 
 st.markdown("""
     <style>
@@ -620,6 +621,7 @@ if df is not None:
             
             sim_mode = st.radio("Välj Strategi:", ["🟨 Kort", "⚽ BLGM"], horizontal=True)
             
+            # --- OPTIMERAREN ---
             st.markdown("### 🎯 Hitta din optimala strategi")
             target_win_rate = st.slider("Vilken vinstprocent siktar du på?", 50, 100, 75, step=5)
             
@@ -715,12 +717,15 @@ if df is not None:
             curr_thresh = st.session_state.ai_threshold if sim_mode == "🟨 Kort" else st.session_state.btts_threshold
             st.markdown(f"### 🔮 Kommande Matcher ({sim_mode} | Gräns: {curr_thresh})")
             
+            if 'scanned_matches' not in st.session_state:
+                st.session_state.scanned_matches = []
+
             if st.button("Scanna Kommande Matcher"):
                 now = datetime.now()
                 upcoming = df[(df['response.fixture.status.short'] == 'NS') & (df['datetime'] > now)].sort_values('datetime')
                 
+                found_bets = []
                 with st.spinner("Scannar marknaden..."):
-                    found_count = 0
                     for idx, row in upcoming.iterrows():
                         hist_df = df[df['datetime'] < row['datetime']]
                         
@@ -741,45 +746,56 @@ if df is not None:
                                 display_val = f"{pb:.2f}"
                         
                         if is_match:
-                            found_count += 1
-                            c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1])
-                            with c1: st.write(f"**{h_team} - {a_team}**")
-                            with c2: st.write(f"Score: {display_val}")
-                            with c3: 
-                                odds_input = st.text_input("Odds", key=f"odds_{row['response.fixture.id']}", label_visibility="collapsed", placeholder="Odds")
-                            with c4:
-                                stake_input = st.text_input("Insats", key=f"stake_{row['response.fixture.id']}", label_visibility="collapsed", placeholder="Summa")
-                            with c5:
-                                if st.button("SPELA", key=f"bet_{row['response.fixture.id']}"):
-                                    # Formatera odds (hantera komma)
-                                    final_odds = odds_input.replace(',', '.') if odds_input else "-"
-                                    
-                                    bet_entry = {
-                                        "Datum": row['Speltid'],
-                                        "Match": f"{h_team} - {a_team}",
-                                        "Typ": sim_mode,
-                                        "Score": display_val,
-                                        "Odds": final_odds,
-                                        "Insats": stake_input if stake_input else "0",
-                                        "Status": "Öppen",
-                                        "FixtureID": row['response.fixture.id']
-                                    }
-                                    add_bet(bet_entry)
-                                    st.success("Sparad!")
-                    
-                    if found_count == 0:
-                        st.info("Inga matcher matchar dina kriterier.")
+                            found_bets.append({
+                                "id": row['response.fixture.id'],
+                                "match": f"{h_team} - {a_team}",
+                                "datum": row['Speltid'],
+                                "score": display_val,
+                                "type": sim_mode
+                            })
+                
+                st.session_state.scanned_matches = found_bets
+            
+            if st.session_state.scanned_matches:
+                st.success(f"Visar {len(st.session_state.scanned_matches)} matcher.")
+                for item in st.session_state.scanned_matches:
+                    with st.form(key=f"form_{item['id']}"):
+                        c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1])
+                        with c1: 
+                            st.write(f"**{item['match']}**")
+                            st.caption(item['datum'])
+                        with c2: 
+                            st.write(f"**Score:** {item['score']}")
+                        with c3: 
+                            odds_val = st.text_input("Odds", key=f"odds_{item['id']}")
+                        with c4:
+                            stake_val = st.text_input("Insats", key=f"stake_{item['id']}")
+                        with c5:
+                            submitted = st.form_submit_button("SPELA")
+                            if submitted:
+                                final_odds = odds_val.replace(',', '.') if odds_val else "-"
+                                bet_entry = {
+                                    "Datum": item['datum'],
+                                    "Match": item['match'],
+                                    "Typ": item['type'],
+                                    "Score": item['score'],
+                                    "Odds": final_odds,
+                                    "Insats": stake_val if stake_val else "0",
+                                    "Status": "Öppen",
+                                    "FixtureID": item['id']
+                                }
+                                add_bet(bet_entry)
+                                st.success("Sparad!")
+            else:
+                st.info("Listan är tom. Tryck på 'Scanna' för att hitta matcher.")
 
         with tab7:
             st.header("📝 Spelhistorik")
-            
-            # Ladda historik
             history_df = load_db()
             
             if history_df.empty:
                 st.info("Inga spel registrerade ännu.")
             else:
-                # Automatisk rättning
                 updated = False
                 for index, row in history_df.iterrows():
                     if row['Status'] == "Öppen":
@@ -799,11 +815,9 @@ if df is not None:
                     save_db(history_df)
                     st.rerun()
 
-                # Visa redigerbar tabell (för att kunna radera/ändra)
                 st.markdown("Du kan redigera värden eller radera rader (markera och tryck Delete).")
                 edited_df = st.data_editor(history_df, num_rows="dynamic", use_container_width=True, key="history_editor")
                 
-                # Spara om ändringar gjorts
                 if not edited_df.equals(history_df):
                     save_db(edited_df)
                     st.rerun()
