@@ -38,6 +38,10 @@ st.markdown("""
     
     /* ODDS TABELL STYLING */
     .odds-table-header { font-weight: bold; text-align: center; background-color: #f0f0f0; padding: 5px; border-radius: 4px; margin-bottom: 5px; font-size: 0.85rem; color: #333; }
+    
+    /* SIMULATOR STYLING */
+    .sim-win { color: #28a745; font-weight: bold; }
+    .sim-loss { color: #dc3545; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -283,15 +287,16 @@ if df is not None:
                           ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
             h2h_past = h2h_past[h2h_past['response.fixture.status.short'] == 'FT']
             
-            derby_boost = 0.8 if not h2h_past.empty and (h2h_past['Gula kort Hemma'] + h2h_past['Gula Kort Borta']).mean() > (h_card_avg + a_card_avg) else 0.0
-            ref_calc = 4.0
             ref_avg_val = 0.0
+            display_ref = "N/A"
             if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
                 ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
                 if not ref_last_10.empty:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
-                    ref_calc = ref_avg_val
+                    display_ref = f"{ref_avg_val:.2f}"
 
+            derby_boost = 0.8 if not h2h_past.empty and (h2h_past['Gula kort Hemma'] + h2h_past['Gula Kort Borta']).mean() > (h_card_avg + a_card_avg) else 0.0
+            ref_calc = ref_avg_val if ref_avg_val > 0 else 4.0
             total_cards_pred = (h_card_avg + a_card_avg) * 0.6 + ref_calc * 0.4 + derby_boost
             h_card_pred = (h_card_avg * 0.6) + (ref_calc * 0.2) + (derby_boost / 2)
             a_card_pred = (a_card_avg * 0.6) + (ref_calc * 0.2) + (derby_boost / 2)
@@ -304,7 +309,7 @@ if df is not None:
             btts_color = "green" if btts_score > 2.0 else "red"
 
             conclusion_paragraphs = [
-                f"**🟨 Kort & Intensitet:** Prognos på **{total_cards_pred:.1f} kort** baserat på historik.",
+                f"**🟨 Kort & Intensitet:** Prognos på **{total_cards_pred:.1f} kort** baserat på historik. Domare: {referee_name} ({display_ref})",
                 f"**🚩 Hörnor:** Ca {h_corn_avg + a_corn_avg:.1f} hörnor per match baserat på lagsnitt."
             ]
             final_conclusion_html = "<br><br>".join(conclusion_paragraphs)
@@ -361,7 +366,7 @@ if df is not None:
                 suffix = "%" if is_pct else ""
                 st.markdown(f'<div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;"><div style="width: 80px; text-align: right; font-size: 1.4rem; font-weight: bold; color: black; padding-right: 15px;">{h_val}{suffix}</div><div style="width: 220px; background: #e63946; color: white; text-align: center; padding: 6px; font-weight: bold; font-size: 0.85rem; border-radius: 2px; text-transform: uppercase;">{label}</div><div style="width: 80px; text-align: left; font-size: 1.4rem; font-weight: bold; color: black; padding-left: 15px;">{a_val}{suffix}</div></div>', unsafe_allow_html=True)
     else:
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell", "📊 Topplista"])
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell", "📊 Topplista", "🧪 Bet Resultat"])
         with tab1:
             mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="mc_mode")
             if mode == "Nästa matcher":
@@ -377,13 +382,14 @@ if df is not None:
                 h_pos = get_team_pos(h_name, l_name, standings_df)
                 a_pos = get_team_pos(a_name, l_name, standings_df)
                 
-                # FIX: Skilj på snitt och resultat för kort
+                # --- ÄNDRING: Riktiga kortresultat för färdiga matcher ---
                 if mode == "Nästa matcher":
                     h_val = get_rolling_card_avg(h_name, df, n=20)
                     a_val = get_rolling_card_avg(a_name, df, n=20)
                     h_disp = f"{h_val:.2f}"
                     a_disp = f"{a_val:.2f}"
                 else:
+                    # Hämtar faktiskt utfall för gula kort
                     h_val = r['Gula kort Hemma']
                     a_val = r['Gula Kort Borta']
                     h_disp = f"{int(h_val)}"
@@ -568,5 +574,77 @@ if df is not None:
                             ref_avg_val = round((r_matches['Gula kort Hemma'].sum() + r_matches['Gula Kort Borta'].sum()) / len(r_matches), 2)
                     analysis_results.append({'Match': f"{h_team} vs {a_team}", 'Kombinerat (Lagen)': round(h_avg + a_avg, 2), 'Domare (Snitt)': ref_avg_val, 'Liga': row['response.league.name']})
                 if analysis_results: st.dataframe(pd.DataFrame(analysis_results).sort_values('Kombinerat (Lagen)', ascending=False), use_container_width=True, hide_index=True)
+        
+        with tab6:
+            st.header("🧪 Bet Resultat (90 Dagar)")
+            if st.button("Kör Simulering (Backtest)"):
+                now = datetime.now()
+                # Filtrera matcher senaste 90 dagarna som är färdigspelade
+                mask = (df['datetime'] < now) & (df['datetime'] >= now - timedelta(days=90)) & (df['response.fixture.status.short'] == 'FT')
+                candidates = df[mask].sort_values('datetime', ascending=False)
+                
+                sim_results = []
+                wins = 0
+                total_bets = 0
+                
+                with st.spinner("Simulerar matcher... Detta kan ta en stund."):
+                    for _, match in candidates.iterrows():
+                        match_date = match['datetime']
+                        # Skapa en 'historisk' dataframe som bara innehåller matcher FÖRE denna match
+                        history_df = df[df['datetime'] < match_date]
+                        
+                        if history_df.empty: continue
+
+                        h_team = match['response.teams.home.name']
+                        a_team = match['response.teams.away.name']
+                        ref_name = match['ref_clean']
+                        
+                        # Räkna ut snitt baserat på HISTORIA (inte framtid)
+                        h_avg = get_rolling_card_avg(h_team, history_df, n=20)
+                        a_avg = get_rolling_card_avg(a_team, history_df, n=20)
+                        
+                        ref_avg = 4.0 # Default
+                        if ref_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
+                            r_hist = history_df[(history_df['ref_clean'] == ref_name) & (history_df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
+                            if not r_hist.empty:
+                                ref_avg = (r_hist['Gula kort Hemma'].sum() + r_hist['Gula Kort Borta'].sum()) / len(r_hist)
+                        
+                        # Enkel prediktion (exkluderar derby-boost för snabbhet i loopen, eller lägg till om du vill)
+                        pred_h = (h_avg * 0.6) + (ref_avg * 0.2)
+                        pred_a = (a_avg * 0.6) + (ref_avg * 0.2)
+                        
+                        # KRITERIUM: AI tror på över 2.0 kort för BÅDA lagen
+                        if pred_h >= 2.0 and pred_a >= 2.0:
+                            total_bets += 1
+                            actual_h = match['Gula kort Hemma']
+                            actual_a = match['Gula Kort Borta']
+                            
+                            # RÄTTNING: Blev det minst 2 kort var?
+                            win = (actual_h >= 2) and (actual_a >= 2)
+                            if win: wins += 1
+                            
+                            res_icon = "✅ VINST" if win else "❌ FÖRLUST"
+                            sim_results.append({
+                                "Datum": match['Speltid'],
+                                "Match": f"{h_team} vs {a_team}",
+                                "Prediction": f"H:{pred_h:.2f} B:{pred_a:.2f}",
+                                "Utfall": f"H:{int(actual_h)} B:{int(actual_a)}",
+                                "Resultat": res_icon
+                            })
+                
+                if total_bets > 0:
+                    hit_rate = (wins / total_bets) * 100
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Totala Bets Funna", total_bets)
+                    c2.metric("Vunna Bets", wins)
+                    c3.metric("Hit Rate", f"{hit_rate:.1f}%")
+                    
+                    st.progress(hit_rate / 100)
+                    
+                    sim_df = pd.DataFrame(sim_results)
+                    st.dataframe(sim_df, use_container_width=True)
+                else:
+                    st.info("Inga matcher hittades som uppfyllde kriterierna under perioden.")
+
 else:
     st.error("Kunde inte ladda data.")
