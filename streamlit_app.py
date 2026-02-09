@@ -724,7 +724,6 @@ if df is not None:
                     st.dataframe(res_df.style.highlight_max(axis=0, subset=["Hit Rate %"]), use_container_width=True)
             
             st.divider()
-            
             curr_thresh = st.session_state.ai_threshold if sim_mode == "🟨 Kort" else st.session_state.btts_threshold
             st.markdown(f"### 🔮 Kommande Matcher ({sim_mode} | Gräns: {curr_thresh})")
             
@@ -769,7 +768,6 @@ if df is not None:
             
             if st.session_state.scanned_matches:
                 st.success(f"Visar {len(st.session_state.scanned_matches)} matcher.")
-                
                 for item in st.session_state.scanned_matches:
                     with st.form(key=f"form_{item['id']}"):
                         c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1])
@@ -814,48 +812,47 @@ if df is not None:
                 except:
                     return 0.0
 
-            history_df['Insats_Num'] = history_df['Insats'].apply(safe_float)
-            history_df['Odds_Num'] = history_df['Odds'].apply(safe_float)
+            if not history_df.empty:
+                history_df['Insats_Num'] = history_df['Insats'].apply(safe_float)
+                history_df['Odds_Num'] = history_df['Odds'].apply(safe_float)
 
-            # Dela upp i Öppna och Stängda spel
-            open_bets = history_df[history_df['Status'] == 'Öppen']
-            closed_bets = history_df[history_df['Status'].isin(['✅ VINST', '❌ FÖRLUST'])]
+                # Dela upp i Öppna och Stängda spel
+                open_bets = history_df[history_df['Status'] == 'Öppen']
+                closed_bets = history_df[history_df['Status'].isin(['✅ VINST', '❌ FÖRLUST'])]
 
-            # 1. Exponering (Summa av insatser på öppna spel)
-             exposure = open_bets['Insats_Num'].sum()
+                # 1. Exponering (Summa av insatser på öppna spel)
+                exposure = open_bets['Insats_Num'].sum()
 
-            # 2. Statistik på stängda spel
-            total_closed = len(closed_bets)
-            total_won = len(closed_bets[closed_bets['Status'] == '✅ VINST'])
-            
-            # Finansiell uträkning
-            net_profit = 0
-            total_staked_closed = 0
-            
-            for _, row in closed_bets.iterrows():
-                stake = row['Insats_Num']
-                odds = row['Odds_Num']
-                total_staked_closed += stake
+                # 2. Statistik på stängda spel
+                total_closed = len(closed_bets)
+                total_won = len(closed_bets[closed_bets['Status'] == '✅ VINST'])
                 
-                if row['Status'] == '✅ VINST':
-                    # Vinst = (Insats * Odds) - Insats
-                    profit = (stake * odds) - stake
-                    net_profit += profit
-                else:
-                    # Förlust = -Insats
-                    net_profit -= stake
+                # Finansiell uträkning
+                net_profit = 0
+                total_staked_closed = 0
+                
+                for _, row in closed_bets.iterrows():
+                    stake = row['Insats_Num']
+                    odds = row['Odds_Num']
+                    total_staked_closed += stake
+                    
+                    if row['Status'] == '✅ VINST':
+                        profit = (stake * odds) - stake
+                        net_profit += profit
+                    else:
+                        net_profit -= stake
 
-            # Procentuträkningar
-            win_rate_count = (total_won / total_closed * 100) if total_closed > 0 else 0
-            roi = (net_profit / total_staked_closed * 100) if total_staked_closed > 0 else 0
+                # Procentuträkningar
+                win_rate_count = (total_won / total_closed * 100) if total_closed > 0 else 0
+                roi = (net_profit / total_staked_closed * 100) if total_staked_closed > 0 else 0
 
-            # --- VISA DASHBOARD ---
-            m1, m2, m3, m4, m5 = st.columns(5)
-            m1.metric("Exponering (Öppet)", f"{int(exposure)} kr")
-            m2.metric("Nettoresultat", f"{int(net_profit)} kr", delta_color="normal")
-            m3.metric("ROI / Avkastning", f"{roi:.1f}%")
-            m4.metric("Hit Rate (Antal)", f"{win_rate_count:.1f}%")
-            m5.metric("Volym (Vunna/Tot)", f"{total_won} / {total_closed}")
+                # --- VISA DASHBOARD ---
+                m1, m2, m3, m4, m5 = st.columns(5)
+                m1.metric("Exponering (Öppet)", f"{int(exposure)} kr")
+                m2.metric("Nettoresultat", f"{int(net_profit)} kr", delta_color="normal")
+                m3.metric("ROI / Avkastning", f"{roi:.1f}%")
+                m4.metric("Hit Rate (Antal)", f"{win_rate_count:.1f}%")
+                m5.metric("Volym (Vunna/Tot)", f"{total_won} / {total_closed}")
             
             st.divider()
 
@@ -890,6 +887,7 @@ if df is not None:
                 # Om ändringar gjorts, spara
                 # Notera: Vi jämför bara de relevanta kolumnerna
                 if not edited_df.equals(history_df[cols_to_show]):
+                    # Återskapa hela DF med hjälp-kolumnerna genom att ladda om och uppdatera
                     save_db(edited_df)
                     st.rerun()
 
