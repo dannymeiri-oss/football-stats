@@ -724,6 +724,7 @@ if df is not None:
                     st.dataframe(res_df.style.highlight_max(axis=0, subset=["Hit Rate %"]), use_container_width=True)
             
             st.divider()
+            
             curr_thresh = st.session_state.ai_threshold if sim_mode == "🟨 Kort" else st.session_state.btts_threshold
             st.markdown(f"### 🔮 Kommande Matcher ({sim_mode} | Gräns: {curr_thresh})")
             
@@ -802,11 +803,66 @@ if df is not None:
 
         with tab7:
             st.header("📝 Spelhistorik")
+            
+            # --- DASHBOARD LOGIK ---
             history_df = load_db()
             
+            # Hjälpfunktion för att konvertera strängar till tal säkert
+            def safe_float(x):
+                try:
+                    return float(str(x).replace(',', '.'))
+                except:
+                    return 0.0
+
+            history_df['Insats_Num'] = history_df['Insats'].apply(safe_float)
+            history_df['Odds_Num'] = history_df['Odds'].apply(safe_float)
+
+            # Dela upp i Öppna och Stängda spel
+            open_bets = history_df[history_df['Status'] == 'Öppen']
+            closed_bets = history_df[history_df['Status'].isin(['✅ VINST', '❌ FÖRLUST'])]
+
+            # 1. Exponering (Summa av insatser på öppna spel)
+             exposure = open_bets['Insats_Num'].sum()
+
+            # 2. Statistik på stängda spel
+            total_closed = len(closed_bets)
+            total_won = len(closed_bets[closed_bets['Status'] == '✅ VINST'])
+            
+            # Finansiell uträkning
+            net_profit = 0
+            total_staked_closed = 0
+            
+            for _, row in closed_bets.iterrows():
+                stake = row['Insats_Num']
+                odds = row['Odds_Num']
+                total_staked_closed += stake
+                
+                if row['Status'] == '✅ VINST':
+                    # Vinst = (Insats * Odds) - Insats
+                    profit = (stake * odds) - stake
+                    net_profit += profit
+                else:
+                    # Förlust = -Insats
+                    net_profit -= stake
+
+            # Procentuträkningar
+            win_rate_count = (total_won / total_closed * 100) if total_closed > 0 else 0
+            roi = (net_profit / total_staked_closed * 100) if total_staked_closed > 0 else 0
+
+            # --- VISA DASHBOARD ---
+            m1, m2, m3, m4, m5 = st.columns(5)
+            m1.metric("Exponering (Öppet)", f"{int(exposure)} kr")
+            m2.metric("Nettoresultat", f"{int(net_profit)} kr", delta_color="normal")
+            m3.metric("ROI / Avkastning", f"{roi:.1f}%")
+            m4.metric("Hit Rate (Antal)", f"{win_rate_count:.1f}%")
+            m5.metric("Volym (Vunna/Tot)", f"{total_won} / {total_closed}")
+            
+            st.divider()
+
             if history_df.empty:
                 st.info("Inga spel registrerade ännu.")
             else:
+                # Automatisk rättning
                 updated = False
                 for index, row in history_df.iterrows():
                     if row['Status'] == "Öppen":
@@ -827,9 +883,13 @@ if df is not None:
                     st.rerun()
 
                 st.markdown("Du kan redigera värden eller radera rader (markera och tryck Delete).")
-                edited_df = st.data_editor(history_df, num_rows="dynamic", use_container_width=True, key="history_editor")
+                # Vi visar original-dataframe i editorn men döljer hjälp-kolumnerna
+                cols_to_show = ["Datum", "Match", "Typ", "Score", "Odds", "Insats", "Status", "FixtureID"]
+                edited_df = st.data_editor(history_df[cols_to_show], num_rows="dynamic", use_container_width=True, key="history_editor")
                 
-                if not edited_df.equals(history_df):
+                # Om ändringar gjorts, spara
+                # Notera: Vi jämför bara de relevanta kolumnerna
+                if not edited_df.equals(history_df[cols_to_show]):
                     save_db(edited_df)
                     st.rerun()
 
