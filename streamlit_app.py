@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
 # Initiera session state
-if 'ai_threshold' not in st.session_state: st.session_state.ai_threshold = 2.5 # Lite högre default nu med smartare modell
+if 'ai_threshold' not in st.session_state: st.session_state.ai_threshold = 2.5
 
 st.markdown("""
     <style>
@@ -192,13 +192,6 @@ def clean_stats(data):
 
 # --- AVANCERAD AI-FORMEL (SMART PREDICTION) ---
 def calculate_smart_prediction(h_team, a_team, ref_name, history_df):
-    """
-    Räknar ut en viktad prediction baserat på:
-    1. Lagens kortsnitt (60%)
-    2. Domarens snitt (30%)
-    3. Foul-intensitet (10%)
-    4. Derby-boost (Bonus)
-    """
     # 1. Kortsnitt
     h_card = get_rolling_card_avg(h_team, history_df, n=20)
     a_card = get_rolling_card_avg(a_team, history_df, n=20)
@@ -213,7 +206,6 @@ def calculate_smart_prediction(h_team, a_team, ref_name, history_df):
     # 3. Fouls (Intensitet)
     h_foul = get_rolling_foul_avg(h_team, history_df, n=20)
     a_foul = get_rolling_foul_avg(a_team, history_df, n=20)
-    # Normering: 10 fouls = neutral. >12 = hög risk.
     h_foul_factor = max(0, (h_foul - 10) * 0.1) 
     a_foul_factor = max(0, (a_foul - 10) * 0.1)
 
@@ -224,10 +216,9 @@ def calculate_smart_prediction(h_team, a_team, ref_name, history_df):
     if not h2h.empty:
         avg_h2h = (h2h['Gula kort Hemma'] + h2h['Gula Kort Borta']).mean()
         if avg_h2h > (h_card + a_card):
-            derby_boost = 0.5 # Halvt kort extra om historiken är het
+            derby_boost = 0.5 
 
     # VIKTAD FORMEL
-    # Vi splittar domar- och derbyeffekten på båda lagen
     pred_h = (h_card * 0.6) + (ref_val * 0.15) + (h_foul_factor * 0.2) + (derby_boost * 0.5)
     pred_a = (a_card * 0.6) + (ref_val * 0.15) + (a_foul_factor * 0.2) + (derby_boost * 0.5)
     
@@ -292,22 +283,36 @@ if df is not None:
             m3.metric("Hörnor snitt (L20)", round(h_hist['Hörnor Hemma'].mean() + a_hist['Hörnor Borta'].mean(), 1) if not h_hist.empty else "N/A")
             m4.metric("Gula snitt (L20)", round(h_card_avg + a_card_avg, 1) if not h_hist.empty else "N/A")
             
+            ref_avg_val = 0.0
+            display_ref = "N/A"
+            if referee_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
+                ref_last_10 = df[(df['ref_clean'] == referee_name) & (df['response.fixture.status.short'] == 'FT')].sort_values('datetime', ascending=False).head(10)
+                if not ref_last_10.empty:
+                    ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
+                    display_ref = f"{ref_avg_val:.2f}"
+            
             # --- ODDS TABELLER (UNIBET) ---
             st.markdown("<br><div class='section-header'>📊 MARKNADSODDS (UNIBET)</div>", unsafe_allow_html=True)
             odds_dfs = get_odds_by_fixture_id(m.get('response.fixture.id'))
             oc1, oc2, oc3 = st.columns(3)
             with oc1:
                 st.markdown("<div class='odds-table-header'>🚩 Corners Over/Under</div>", unsafe_allow_html=True)
-                if odds_dfs["corners"] is not None: st.dataframe(odds_dfs["corners"], hide_index=True, use_container_width=True)
-                else: st.info("Inga odds")
+                if odds_dfs["corners"] is not None:
+                    st.dataframe(odds_dfs["corners"], hide_index=True, use_container_width=True)
+                else:
+                    st.info("Inga odds")
             with oc2:
                 st.markdown("<div class='odds-table-header'>🟨 Cards Over/Under</div>", unsafe_allow_html=True)
-                if odds_dfs["cards"] is not None: st.dataframe(odds_dfs["cards"], hide_index=True, use_container_width=True)
-                else: st.info("Inga odds")
+                if odds_dfs["cards"] is not None:
+                    st.dataframe(odds_dfs["cards"], hide_index=True, use_container_width=True)
+                else:
+                    st.info("Inga odds")
             with oc3:
                 st.markdown("<div class='odds-table-header'>⚽ Both Teams Score</div>", unsafe_allow_html=True)
-                if odds_dfs["btts"] is not None: st.dataframe(odds_dfs["btts"], hide_index=True, use_container_width=True)
-                else: st.info("Inga odds")
+                if odds_dfs["btts"] is not None:
+                    st.dataframe(odds_dfs["btts"], hide_index=True, use_container_width=True)
+                else:
+                    st.info("Inga odds")
 
             # --- AI PREDICTIONS (SMART) ---
             st.markdown("<div class='section-header'>🤖 DEEP STATS AI PREDICTION (L20)</div>", unsafe_allow_html=True)
@@ -325,7 +330,7 @@ if df is not None:
             btts_color = "green" if btts_score > 2.0 else "red"
 
             conclusion_paragraphs = [
-                f"**🟨 Kort & Intensitet:** Smart AI-prognos på **{total_cards_pred:.1f} kort**. Modellen väger in domaren {referee_name} ({ref_val_used:.1f} snitt) och lagens intensitet.",
+                f"**🟨 Kort & Intensitet:** Smart AI-prognos på **{total_cards_pred:.1f} kort**. Modellen väger in domaren {referee_name} ({ref_val_used:.1f} snitt) och lagens foul-intensitet.",
                 f"**🚩 Hörnor:** Ca {h_corn_avg + a_corn_avg:.1f} hörnor per match baserat på lagsnitt."
             ]
             final_conclusion_html = "<br><br>".join(conclusion_paragraphs)
@@ -606,7 +611,6 @@ if df is not None:
                     st.warning("Ingen historisk data tillgänglig för perioden.")
                 else:
                     # PRE-CALCULATION PHASE (OPTIMERING)
-                    # Vi räknar ut alla predictions EN gång för alla kandidater
                     simulated_predictions = []
                     
                     with st.spinner("Analyserar historisk data & simulerar matcher..."):
@@ -680,6 +684,42 @@ if df is not None:
                     st.markdown("### 📊 Analys av alla nivåer")
                     st.line_chart(res_df.set_index("Threshold")["Hit Rate %"])
                     st.dataframe(res_df.style.highlight_max(axis=0, subset=["Hit Rate %"]), use_container_width=True)
+            
+            st.divider()
+            st.markdown(f"### 🔮 Kommande Matcher (Threshold: {st.session_state.ai_threshold})")
+            
+            if st.button("Scanna Kommande Matcher"):
+                now = datetime.now()
+                upcoming = df[(df['response.fixture.status.short'] == 'NS') & (df['datetime'] > now)].sort_values('datetime')
+                
+                found_bets = []
+                with st.spinner("Scannar marknaden med din AI-modell..."):
+                    for _, row in upcoming.iterrows():
+                        # För kommande matcher är 'history' allt som hänt innan matchens starttid (dvs nu)
+                        hist_df = df[df['datetime'] < row['datetime']]
+                        
+                        ph, pa, _ = calculate_smart_prediction(
+                            row['response.teams.home.name'],
+                            row['response.teams.away.name'],
+                            row['ref_clean'],
+                            hist_df
+                        )
+                        
+                        if ph >= st.session_state.ai_threshold and pa >= st.session_state.ai_threshold:
+                            found_bets.append({
+                                "Datum": row['Speltid'],
+                                "Match": f"{row['response.teams.home.name']} - {row['response.teams.away.name']}",
+                                "AI Home": round(ph, 2),
+                                "AI Away": round(pa, 2),
+                                "Domare": row['ref_clean'],
+                                "Liga": row['response.league.name']
+                            })
+                
+                if found_bets:
+                    st.success(f"Hittade {len(found_bets)} matcher som matchar din strategi!")
+                    st.dataframe(pd.DataFrame(found_bets), use_container_width=True)
+                else:
+                    st.info("Inga kommande matcher matchar dina kriterier just nu.")
 
 else:
     st.error("Kunde inte ladda data.")
