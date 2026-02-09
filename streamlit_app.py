@@ -40,13 +40,13 @@ st.markdown("""
 
 st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html=True)
 
-SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
-RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
-STANDINGS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=712668345"
-
 # API CONFIG
 API_KEY = "6343cd4636523af501b585a1b595ad26"
 API_BASE_URL = "https://v3.football.api-sports.io"
+
+SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
+RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
+STANDINGS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=712668345"
 
 # --- 2. DATAHANTERING ---
 @st.cache_data(ttl=60)
@@ -57,10 +57,10 @@ def load_data(url):
         return data
     except: return None
 
-# --- API ODDS HÄMTNING (FIXAD LOGIK FÖR ATT UNDVIKA FELPLACERING) ---
+# --- API ODDS HÄMTNING (UPPDATERAD MED SIMULERINGS-LOGIK) ---
 @st.cache_data(ttl=600)
 def get_odds_by_fixture_id(fixture_id):
-    """Hämtar odds direkt via fixture_id från API-Football med strikt separering av kort/hörnor."""
+    """Hämtar odds direkt via fixture_id från API-Football."""
     res = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
     
     if not fixture_id or str(fixture_id) in ["0", "0.0", "nan"]:
@@ -78,9 +78,11 @@ def get_odds_by_fixture_id(fixture_id):
         r = requests.get(url, headers=headers, timeout=5)
         data = r.json()
         
+        # Kontrollera att vi fick svar
         if not data.get('response') or len(data['response']) == 0:
             return res
             
+        # Hämta bookmakers från svaret
         bookmakers = data['response'][0].get('bookmakers', [])
         if not bookmakers: return res
         
@@ -97,33 +99,29 @@ def get_odds_by_fixture_id(fixture_id):
             
             # --- 2. HÖRNOR (ID 15) ---
             if bet['id'] == 15:
-                # Filtrera fram "Over"
-                corner_lines = {v['value']: v['odd'] for v in bet['values'] if "Over" in v['value']}
+                # Skapa en map för alla "Over"-värden
+                over_lines = {v['value']: v['odd'] for v in bet['values'] if "Over" in v['value']}
                 
-                # Prioritering: 11.5 -> 10.5 -> 9.5 -> 8.5
-                if "Over 11.5" in corner_lines:
-                    res["corners"] = f"{corner_lines['Over 11.5']} (Ö11.5)"
-                elif "Over 10.5" in corner_lines:
-                    res["corners"] = f"{corner_lines['Over 10.5']} (Ö10.5)"
-                elif "Over 9.5" in corner_lines:
-                    res["corners"] = f"{corner_lines['Over 9.5']} (Ö9.5)"
-                elif "Over 8.5" in corner_lines:
-                    res["corners"] = f"{corner_lines['Over 8.5']} (Ö8.5)"
-                elif "Over 12.5" in corner_lines:
-                    res["corners"] = f"{corner_lines['Over 12.5']} (Ö12.5)"
+                # Försök hitta specifika linjer i ordning
+                if "Over 11.5" in over_lines:
+                    res["corners"] = f"{over_lines['Over 11.5']} (Ö11.5)"
+                elif "Over 10.5" in over_lines:
+                    res["corners"] = f"{over_lines['Over 10.5']} (Ö10.5)"
+                elif "Over 9.5" in over_lines:
+                    res["corners"] = f"{over_lines['Over 9.5']} (Ö9.5)"
+                elif "Over 8.5" in over_lines:
+                    res["corners"] = f"{over_lines['Over 8.5']} (Ö8.5)"
+                elif len(over_lines) > 0:
+                    # Fallback: Ta första nyckeln vi hittar
+                    first_key = list(over_lines.keys())[0]
+                    res["corners"] = f"{over_lines[first_key]} ({first_key.replace('Over ', 'Ö')})"
 
             # --- 3. KORT (ID 45) ---
             if bet['id'] == 45:
-                # FIXEN: Filtrera ENDAST linor som är relevanta för kort (under 7.5)
-                # Detta förhindrar att en hörn-lina på 9.5 råkar hamna här.
-                card_lines = {}
-                valid_card_lines = ["Over 2.5", "Over 3.5", "Over 4.5", "Over 5.5", "Over 6.5"]
+                # Skapa en map för alla "Over"-värden
+                card_lines = {v['value']: v['odd'] for v in bet['values'] if "Over" in v['value']}
                 
-                for v in bet['values']:
-                    if v['value'] in valid_card_lines:
-                        card_lines[v['value']] = v['odd']
-                
-                # Prioritering: 3.5 -> 4.5 -> 2.5 -> 5.5
+                # Prioritering för kort - ENDAST KORTLINJER
                 if "Over 3.5" in card_lines:
                     res["cards"] = f"{card_lines['Over 3.5']} (Ö3.5)"
                 elif "Over 4.5" in card_lines:
@@ -132,6 +130,7 @@ def get_odds_by_fixture_id(fixture_id):
                     res["cards"] = f"{card_lines['Over 2.5']} (Ö2.5)"
                 elif "Over 5.5" in card_lines:
                     res["cards"] = f"{card_lines['Over 5.5']} (Ö5.5)"
+                # Här har vi INGEN generell fallback för att undvika att hörn-linjer smyger sig in
 
     except Exception as e:
         res["debug"] = str(e)
