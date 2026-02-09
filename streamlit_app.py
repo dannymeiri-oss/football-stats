@@ -9,6 +9,7 @@ st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
 # Initiera session state
 if 'ai_threshold' not in st.session_state: st.session_state.ai_threshold = 2.5
+if 'btts_threshold' not in st.session_state: st.session_state.btts_threshold = 2.5 # Default för BLGM
 
 st.markdown("""
     <style>
@@ -190,7 +191,7 @@ def clean_stats(data):
     data['Speltid'] = data['datetime'].dt.strftime('%d %b %Y')
     return data
 
-# --- AVANCERAD AI-FORMEL (SMART PREDICTION) ---
+# --- SMART PREDICTION FUNCTIONS ---
 def calculate_smart_prediction(h_team, a_team, ref_name, history_df):
     # 1. Kortsnitt
     h_card = get_rolling_card_avg(h_team, history_df, n=20)
@@ -223,6 +224,32 @@ def calculate_smart_prediction(h_team, a_team, ref_name, history_df):
     pred_a = (a_card * 0.6) + (ref_val * 0.15) + (a_foul_factor * 0.2) + (derby_boost * 0.5)
     
     return pred_h, pred_a, ref_val
+
+def calculate_btts_prediction(h_team, a_team, history_df):
+    """
+    Räknar ut en 'BTTS Score' baserat på:
+    1. Hemmalagets offensiv vs Bortalagets defensiv
+    2. Bortalagets offensiv vs Hemmalagets defensiv
+    3. Historisk BTTS-frekvens
+    """
+    h_scored, h_conceded = get_rolling_goals_stats(h_team, history_df, n=20)
+    a_scored, a_conceded = get_rolling_goals_stats(a_team, history_df, n=20)
+    
+    # Förväntade mål (xG-light)
+    exp_h_goals = (h_scored + a_conceded) / 2
+    exp_a_goals = (a_scored + h_conceded) / 2
+    
+    # Grundpoäng: Summan av förväntade mål
+    base_score = exp_h_goals + exp_a_goals
+    
+    # BTTS Historik (L10) - Hur ofta spelar de BLGM?
+    # Detta kräver lite mer prestanda, vi gör en enkel koll på snittmål istället för att loopa matcher för prestanda.
+    # Om båda lagen både gör och släpper in > 1.0 mål i snitt, är det bra.
+    consistency_bonus = 0.0
+    if h_scored > 1.0 and h_conceded > 1.0: consistency_bonus += 0.2
+    if a_scored > 1.0 and a_conceded > 1.0: consistency_bonus += 0.2
+    
+    return base_score + consistency_bonus
 
 df = clean_stats(load_data(RAW_DATA_URL))
 standings_df = load_data(STANDINGS_URL)
@@ -291,47 +318,41 @@ if df is not None:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
                     display_ref = f"{ref_avg_val:.2f}"
             
-            # --- ODDS TABELLER (UNIBET) ---
             st.markdown("<br><div class='section-header'>📊 MARKNADSODDS (UNIBET)</div>", unsafe_allow_html=True)
             odds_dfs = get_odds_by_fixture_id(m.get('response.fixture.id'))
             oc1, oc2, oc3 = st.columns(3)
             with oc1:
                 st.markdown("<div class='odds-table-header'>🚩 Corners Over/Under</div>", unsafe_allow_html=True)
-                if odds_dfs["corners"] is not None:
-                    st.dataframe(odds_dfs["corners"], hide_index=True, use_container_width=True)
-                else:
-                    st.info("Inga odds")
+                if odds_dfs["corners"] is not None: st.dataframe(odds_dfs["corners"], hide_index=True, use_container_width=True)
+                else: st.info("Inga odds")
             with oc2:
                 st.markdown("<div class='odds-table-header'>🟨 Cards Over/Under</div>", unsafe_allow_html=True)
-                if odds_dfs["cards"] is not None:
-                    st.dataframe(odds_dfs["cards"], hide_index=True, use_container_width=True)
-                else:
-                    st.info("Inga odds")
+                if odds_dfs["cards"] is not None: st.dataframe(odds_dfs["cards"], hide_index=True, use_container_width=True)
+                else: st.info("Inga odds")
             with oc3:
                 st.markdown("<div class='odds-table-header'>⚽ Both Teams Score</div>", unsafe_allow_html=True)
-                if odds_dfs["btts"] is not None:
-                    st.dataframe(odds_dfs["btts"], hide_index=True, use_container_width=True)
-                else:
-                    st.info("Inga odds")
+                if odds_dfs["btts"] is not None: st.dataframe(odds_dfs["btts"], hide_index=True, use_container_width=True)
+                else: st.info("Inga odds")
 
-            # --- AI PREDICTIONS (SMART) ---
             st.markdown("<div class='section-header'>🤖 DEEP STATS AI PREDICTION (L20)</div>", unsafe_allow_html=True)
+            h2h_past = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
+                          ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
+            h2h_past = h2h_past[h2h_past['response.fixture.status.short'] == 'FT']
             
-            # Använd den smarta funktionen
             h_card_pred, a_card_pred, ref_val_used = calculate_smart_prediction(h_team, a_team, referee_name, df[df['datetime'] < m['datetime']])
             total_cards_pred = h_card_pred + a_card_pred
             
             h_corn_avg = get_rolling_corner_avg(h_team, df, n=20)
             a_corn_avg = get_rolling_corner_avg(a_team, df, n=20)
-            h_scored, h_conceded = get_rolling_goals_stats(h_team, df, n=20)
-            a_scored, a_conceded = get_rolling_goals_stats(a_team, df, n=20)
-            btts_score = (h_scored + a_conceded + a_scored + h_conceded) / 2
-            btts_pred_text = "JA (Troligt)" if btts_score > 2.0 else "NEJ"
-            btts_color = "green" if btts_score > 2.0 else "red"
+            
+            # BLGM Prediction
+            btts_val = calculate_btts_prediction(h_team, a_team, df[df['datetime'] < m['datetime']])
+            btts_text = "JA (Troligt)" if btts_val > 2.6 else "NEJ"
+            btts_color = "green" if btts_val > 2.6 else "red"
 
             conclusion_paragraphs = [
-                f"**🟨 Kort & Intensitet:** Smart AI-prognos på **{total_cards_pred:.1f} kort**. Modellen väger in domaren {referee_name} ({ref_val_used:.1f} snitt) och lagens foul-intensitet.",
-                f"**🚩 Hörnor:** Ca {h_corn_avg + a_corn_avg:.1f} hörnor per match baserat på lagsnitt."
+                f"**🟨 Kort & Intensitet:** Smart AI-prognos på **{total_cards_pred:.1f} kort**. Domare: {referee_name} ({ref_val_used:.1f})",
+                f"**⚽ BLGM-Score:** {btts_val:.2f} (Över 2.6 indikerar hög sannolikhet)."
             ]
             final_conclusion_html = "<br><br>".join(conclusion_paragraphs)
 
@@ -353,7 +374,6 @@ if df is not None:
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER {current_threshold} KORT</div>", unsafe_allow_html=True)
 
             stat_comparison_row("AI HÖRNOR PREDIKTION", h_corn_avg, a_corn_avg)
-            
             col_c1, col_c2 = st.columns(2)
             with col_c1:
                 if h_corn_avg >= 5.5: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
@@ -362,7 +382,7 @@ if df is not None:
                 if a_corn_avg >= 5.5: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
 
-            st.markdown(f"<div style='text-align:center; font-weight:bold; margin-top: 15px;'>BÅDA LAGEN GÖR MÅL (BLGM)? <span style='color:{btts_color}; font-size:1.2em;'>{btts_pred_text}</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center; font-weight:bold; margin-top: 15px;'>BÅDA LAGEN GÖR MÅL (BLGM)? <span style='color:{btts_color}; font-size:1.2em;'>{btts_text}</span></div>", unsafe_allow_html=True)
             st.markdown(f"<div class='ai-text-box'><b>🎙️ AI-Analys & Slutsats:</b><br><br>{final_conclusion_html}</div>", unsafe_allow_html=True)
 
             st.markdown("<h3 style='text-align:center; margin-top:20px; color:#333;'>SEASON AVERAGES COMPARISON</h3>", unsafe_allow_html=True)
@@ -389,7 +409,7 @@ if df is not None:
                 suffix = "%" if is_pct else ""
                 st.markdown(f'<div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;"><div style="width: 80px; text-align: right; font-size: 1.4rem; font-weight: bold; color: black; padding-right: 15px;">{h_val}{suffix}</div><div style="width: 220px; background: #e63946; color: white; text-align: center; padding: 6px; font-weight: bold; font-size: 0.85rem; border-radius: 2px; text-transform: uppercase;">{label}</div><div style="width: 80px; text-align: left; font-size: 1.4rem; font-weight: bold; color: black; padding-left: 15px;">{a_val}{suffix}</div></div>', unsafe_allow_html=True)
     else:
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell", "📊 Topplista", "🧪 Bet Optimizer"])
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell", "📊 Topplista", "🧪 Bet Simulator"])
         with tab1:
             mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="mc_mode")
             if mode == "Nästa matcher":
@@ -599,6 +619,9 @@ if df is not None:
         with tab6:
             st.header("🧪 Bet Simulator & Optimizer (90 Dagar)")
             
+            # --- SWITCH MELLAN KORT OCH BLGM ---
+            sim_mode = st.radio("Välj Strategi:", ["🟨 Kort", "⚽ BLGM"], horizontal=True)
+            
             st.markdown("### 🎯 Hitta din optimala strategi")
             target_win_rate = st.slider("Vilken vinstprocent siktar du på?", 50, 100, 75, step=5)
             
@@ -610,48 +633,55 @@ if df is not None:
                 if candidates.empty:
                     st.warning("Ingen historisk data tillgänglig för perioden.")
                 else:
-                    # PRE-CALCULATION PHASE (OPTIMERING)
                     simulated_predictions = []
                     
                     with st.spinner("Analyserar historisk data & simulerar matcher..."):
                         for _, match in candidates.iterrows():
                             match_date = match['datetime']
-                            # Hämta historik snabbt
                             history_df = df[df['datetime'] < match_date]
                             if history_df.empty: continue
 
                             h_team = match['response.teams.home.name']
                             a_team = match['response.teams.away.name']
-                            ref_name = match['ref_clean']
                             
-                            # Använd den SMARTA funktionen vi skapade
-                            pred_h, pred_a, _ = calculate_smart_prediction(h_team, a_team, ref_name, history_df)
-                            
-                            actual_h = match['Gula kort Hemma']
-                            actual_a = match['Gula Kort Borta']
-                            
-                            simulated_predictions.append({
-                                "pred_h": pred_h,
-                                "pred_a": pred_a,
-                                "actual_h": actual_h,
-                                "actual_a": actual_a
-                            })
+                            # Logik beroende på vald strategi
+                            if sim_mode == "🟨 Kort":
+                                ref_name = match['ref_clean']
+                                pred_h, pred_a, _ = calculate_smart_prediction(h_team, a_team, ref_name, history_df)
+                                actual_h = match['Gula kort Hemma']
+                                actual_a = match['Gula Kort Borta']
+                                simulated_predictions.append({
+                                    "val": (pred_h, pred_a),
+                                    "win": (actual_h >= 2 and actual_a >= 2)
+                                })
+                            else: # BLGM
+                                pred_btts = calculate_btts_prediction(h_team, a_team, history_df)
+                                actual_btts = (match['response.goals.home'] > 0 and match['response.goals.away'] > 0)
+                                simulated_predictions.append({
+                                    "val": pred_btts,
+                                    "win": actual_btts
+                                })
                     
-                    # THRESHOLD TESTING PHASE (Blixtsnabb)
+                    # Threshold testing
                     results_data = []
-                    test_ranges = [round(x * 0.1, 1) for x in range(20, 36)] # 2.0 to 3.5
-                    
                     my_bar = st.progress(0, text="Optimerar...")
+                    
+                    # Olika ranges beroende på strategi
+                    test_ranges = [round(x * 0.1, 1) for x in range(20, 36)] if sim_mode == "🟨 Kort" else [round(x * 0.1, 1) for x in range(15, 45)]
                     
                     for i, threshold in enumerate(test_ranges):
                         wins = 0
                         bets = 0
-                        # Nu loopar vi bara över den färdigräknade listan
                         for sim in simulated_predictions:
-                            if sim["pred_h"] >= threshold and sim["pred_a"] >= threshold:
+                            is_bet = False
+                            if sim_mode == "🟨 Kort":
+                                if sim["val"][0] >= threshold and sim["val"][1] >= threshold: is_bet = True
+                            else: # BLGM
+                                if sim["val"] >= threshold: is_bet = True
+                            
+                            if is_bet:
                                 bets += 1
-                                if sim["actual_h"] >= 2 and sim["actual_a"] >= 2:
-                                    wins += 1
+                                if sim["win"]: wins += 1
                         
                         current_hit_rate = (wins / bets * 100) if bets > 0 else 0
                         results_data.append({"Threshold": threshold, "Hit Rate %": round(current_hit_rate, 1), "Bets": bets})
@@ -671,10 +701,11 @@ if df is not None:
                         c2.metric("Förväntad Hit Rate", f"{winner['Hit Rate %']}%")
                         c3.metric("Antal Bets (90d)", f"{int(winner['Bets'])}")
                         
-                        st.success(f"✅ För att nå **{target_win_rate}% vinst** bör du endast spela när den smarta AI-modellen förutspår minst **{winner['Threshold']}** kort för båda lagen.")
+                        st.success(f"✅ För att nå **{target_win_rate}% vinst** ({sim_mode}) bör du sätta gränsen på **{winner['Threshold']}**.")
                         
-                        if st.button(f"Sätt Threshold till {winner['Threshold']}"):
-                            st.session_state.ai_threshold = winner['Threshold']
+                        if st.button(f"Sätt {sim_mode}-Threshold till {winner['Threshold']}"):
+                            if sim_mode == "🟨 Kort": st.session_state.ai_threshold = winner['Threshold']
+                            else: st.session_state.btts_threshold = winner['Threshold']
                             st.rerun()
                     else:
                         best_possible = res_df.loc[res_df['Hit Rate %'].idxmax()]
@@ -686,34 +717,40 @@ if df is not None:
                     st.dataframe(res_df.style.highlight_max(axis=0, subset=["Hit Rate %"]), use_container_width=True)
             
             st.divider()
-            st.markdown(f"### 🔮 Kommande Matcher (Threshold: {st.session_state.ai_threshold})")
+            curr_thresh = st.session_state.ai_threshold if sim_mode == "🟨 Kort" else st.session_state.btts_threshold
+            st.markdown(f"### 🔮 Kommande Matcher ({sim_mode} | Gräns: {curr_thresh})")
             
             if st.button("Scanna Kommande Matcher"):
                 now = datetime.now()
                 upcoming = df[(df['response.fixture.status.short'] == 'NS') & (df['datetime'] > now)].sort_values('datetime')
                 
                 found_bets = []
-                with st.spinner("Scannar marknaden med din AI-modell..."):
+                with st.spinner("Scannar marknaden..."):
                     for _, row in upcoming.iterrows():
-                        # För kommande matcher är 'history' allt som hänt innan matchens starttid (dvs nu)
                         hist_df = df[df['datetime'] < row['datetime']]
                         
-                        ph, pa, _ = calculate_smart_prediction(
-                            row['response.teams.home.name'],
-                            row['response.teams.away.name'],
-                            row['ref_clean'],
-                            hist_df
-                        )
+                        h_team = row['response.teams.home.name']
+                        a_team = row['response.teams.away.name']
                         
-                        if ph >= st.session_state.ai_threshold and pa >= st.session_state.ai_threshold:
-                            found_bets.append({
-                                "Datum": row['Speltid'],
-                                "Match": f"{row['response.teams.home.name']} - {row['response.teams.away.name']}",
-                                "AI Home": round(ph, 2),
-                                "AI Away": round(pa, 2),
-                                "Domare": row['ref_clean'],
-                                "Liga": row['response.league.name']
-                            })
+                        if sim_mode == "🟨 Kort":
+                            ph, pa, _ = calculate_smart_prediction(h_team, a_team, row['ref_clean'], hist_df)
+                            if ph >= curr_thresh and pa >= curr_thresh:
+                                found_bets.append({
+                                    "Datum": row['Speltid'],
+                                    "Match": f"{h_team} - {a_team}",
+                                    "AI Home": round(ph, 2),
+                                    "AI Away": round(pa, 2),
+                                    "Domare": row['ref_clean']
+                                })
+                        else: # BLGM
+                            pb = calculate_btts_prediction(h_team, a_team, hist_df)
+                            if pb >= curr_thresh:
+                                found_bets.append({
+                                    "Datum": row['Speltid'],
+                                    "Match": f"{h_team} - {a_team}",
+                                    "BLGM Score": round(pb, 2),
+                                    "Liga": row['response.league.name']
+                                })
                 
                 if found_bets:
                     st.success(f"Hittade {len(found_bets)} matcher som matchar din strategi!")
