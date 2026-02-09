@@ -1,5 +1,5 @@
 import streamlit as st
-import pandas as pd
+import pd as pd
 import numpy as np
 from datetime import datetime, timedelta
 
@@ -279,7 +279,8 @@ if df is not None:
             goal_reason = f"**⚽ Målchanser:** "
             if btts_score > 2.6:
                 goal_reason += f"Båda lagen visar fin offensiv form samtidigt som försvaren läcker. BLGM (Båda lagen gör mål) ser statistiskt starkt ut."
-            elif home_exp_goals > 2.0 and away_exp_goals < 0.8:
+            # RÄTTELSE: Ändrat home_exp_goals till h_scored och away_exp_goals till a_scored
+            elif h_scored > 2.0 and a_scored < 0.8:
                 goal_reason += f"Data pekar på en ensidig matchbild där {h_team} dominerar. Risken är att {a_team} får svårt att näta."
             else:
                 goal_reason += "En svårbedömd målbild där dagsformen blir avgörande."
