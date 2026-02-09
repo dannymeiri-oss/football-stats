@@ -9,7 +9,8 @@ st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
 # Initiera session state
 if 'ai_threshold' not in st.session_state: st.session_state.ai_threshold = 2.5
-if 'btts_threshold' not in st.session_state: st.session_state.btts_threshold = 2.5 # Default för BLGM
+if 'btts_threshold' not in st.session_state: st.session_state.btts_threshold = 2.5
+if 'bet_history' not in st.session_state: st.session_state.bet_history = [] # Lista för lagda spel
 
 st.markdown("""
     <style>
@@ -193,24 +194,20 @@ def clean_stats(data):
 
 # --- SMART PREDICTION FUNCTIONS ---
 def calculate_smart_prediction(h_team, a_team, ref_name, history_df):
-    # 1. Kortsnitt
     h_card = get_rolling_card_avg(h_team, history_df, n=20)
     a_card = get_rolling_card_avg(a_team, history_df, n=20)
     
-    # 2. Domare
     ref_val = 4.0
     if ref_name not in ["Domare: Okänd", "0", "Okänd", "nan", None]:
         r_hist = history_df[(history_df['ref_clean'] == ref_name)].sort_values('datetime', ascending=False).head(10)
         if not r_hist.empty:
             ref_val = (r_hist['Gula kort Hemma'].sum() + r_hist['Gula Kort Borta'].sum()) / len(r_hist)
     
-    # 3. Fouls (Intensitet)
     h_foul = get_rolling_foul_avg(h_team, history_df, n=20)
     a_foul = get_rolling_foul_avg(a_team, history_df, n=20)
     h_foul_factor = max(0, (h_foul - 10) * 0.1) 
     a_foul_factor = max(0, (a_foul - 10) * 0.1)
 
-    # 4. H2H Boost
     h2h = history_df[((history_df['response.teams.home.name'] == h_team) & (history_df['response.teams.away.name'] == a_team)) | 
                      ((history_df['response.teams.home.name'] == a_team) & (history_df['response.teams.away.name'] == h_team))]
     derby_boost = 0.0
@@ -219,36 +216,20 @@ def calculate_smart_prediction(h_team, a_team, ref_name, history_df):
         if avg_h2h > (h_card + a_card):
             derby_boost = 0.5 
 
-    # VIKTAD FORMEL
     pred_h = (h_card * 0.6) + (ref_val * 0.15) + (h_foul_factor * 0.2) + (derby_boost * 0.5)
     pred_a = (a_card * 0.6) + (ref_val * 0.15) + (a_foul_factor * 0.2) + (derby_boost * 0.5)
     
     return pred_h, pred_a, ref_val
 
 def calculate_btts_prediction(h_team, a_team, history_df):
-    """
-    Räknar ut en 'BTTS Score' baserat på:
-    1. Hemmalagets offensiv vs Bortalagets defensiv
-    2. Bortalagets offensiv vs Hemmalagets defensiv
-    3. Historisk BTTS-frekvens
-    """
     h_scored, h_conceded = get_rolling_goals_stats(h_team, history_df, n=20)
     a_scored, a_conceded = get_rolling_goals_stats(a_team, history_df, n=20)
-    
-    # Förväntade mål (xG-light)
     exp_h_goals = (h_scored + a_conceded) / 2
     exp_a_goals = (a_scored + h_conceded) / 2
-    
-    # Grundpoäng: Summan av förväntade mål
     base_score = exp_h_goals + exp_a_goals
-    
-    # BTTS Historik (L10) - Hur ofta spelar de BLGM?
-    # Detta kräver lite mer prestanda, vi gör en enkel koll på snittmål istället för att loopa matcher för prestanda.
-    # Om båda lagen både gör och släpper in > 1.0 mål i snitt, är det bra.
     consistency_bonus = 0.0
     if h_scored > 1.0 and h_conceded > 1.0: consistency_bonus += 0.2
     if a_scored > 1.0 and a_conceded > 1.0: consistency_bonus += 0.2
-    
     return base_score + consistency_bonus
 
 df = clean_stats(load_data(RAW_DATA_URL))
@@ -345,7 +326,6 @@ if df is not None:
             h_corn_avg = get_rolling_corner_avg(h_team, df, n=20)
             a_corn_avg = get_rolling_corner_avg(a_team, df, n=20)
             
-            # BLGM Prediction
             btts_val = calculate_btts_prediction(h_team, a_team, df[df['datetime'] < m['datetime']])
             btts_text = "JA (Troligt)" if btts_val > 2.6 else "NEJ"
             btts_color = "green" if btts_val > 2.6 else "red"
@@ -409,7 +389,7 @@ if df is not None:
                 suffix = "%" if is_pct else ""
                 st.markdown(f'<div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;"><div style="width: 80px; text-align: right; font-size: 1.4rem; font-weight: bold; color: black; padding-right: 15px;">{h_val}{suffix}</div><div style="width: 220px; background: #e63946; color: white; text-align: center; padding: 6px; font-weight: bold; font-size: 0.85rem; border-radius: 2px; text-transform: uppercase;">{label}</div><div style="width: 80px; text-align: left; font-size: 1.4rem; font-weight: bold; color: black; padding-left: 15px;">{a_val}{suffix}</div></div>', unsafe_allow_html=True)
     else:
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell", "📊 Topplista", "🧪 Bet Simulator"])
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell", "📊 Topplista", "🧪 Bet Simulator", "📝 Spelhistorik"])
         with tab1:
             mode = st.radio("Visa:", ["Nästa matcher", "Resultat"], horizontal=True, key="mc_mode")
             if mode == "Nästa matcher":
@@ -619,7 +599,6 @@ if df is not None:
         with tab6:
             st.header("🧪 Bet Simulator & Optimizer (90 Dagar)")
             
-            # --- SWITCH MELLAN KORT OCH BLGM ---
             sim_mode = st.radio("Välj Strategi:", ["🟨 Kort", "⚽ BLGM"], horizontal=True)
             
             st.markdown("### 🎯 Hitta din optimala strategi")
@@ -644,7 +623,6 @@ if df is not None:
                             h_team = match['response.teams.home.name']
                             a_team = match['response.teams.away.name']
                             
-                            # Logik beroende på vald strategi
                             if sim_mode == "🟨 Kort":
                                 ref_name = match['ref_clean']
                                 pred_h, pred_a, _ = calculate_smart_prediction(h_team, a_team, ref_name, history_df)
@@ -662,11 +640,9 @@ if df is not None:
                                     "win": actual_btts
                                 })
                     
-                    # Threshold testing
                     results_data = []
                     my_bar = st.progress(0, text="Optimerar...")
                     
-                    # Olika ranges beroende på strategi
                     test_ranges = [round(x * 0.1, 1) for x in range(20, 36)] if sim_mode == "🟨 Kort" else [round(x * 0.1, 1) for x in range(15, 45)]
                     
                     for i, threshold in enumerate(test_ranges):
@@ -724,39 +700,64 @@ if df is not None:
                 now = datetime.now()
                 upcoming = df[(df['response.fixture.status.short'] == 'NS') & (df['datetime'] > now)].sort_values('datetime')
                 
-                found_bets = []
                 with st.spinner("Scannar marknaden..."):
-                    for _, row in upcoming.iterrows():
+                    for idx, row in upcoming.iterrows():
                         hist_df = df[df['datetime'] < row['datetime']]
                         
                         h_team = row['response.teams.home.name']
                         a_team = row['response.teams.away.name']
+                        is_match = False
+                        display_val = ""
                         
                         if sim_mode == "🟨 Kort":
                             ph, pa, _ = calculate_smart_prediction(h_team, a_team, row['ref_clean'], hist_df)
                             if ph >= curr_thresh and pa >= curr_thresh:
-                                found_bets.append({
-                                    "Datum": row['Speltid'],
-                                    "Match": f"{h_team} - {a_team}",
-                                    "AI Home": round(ph, 2),
-                                    "AI Away": round(pa, 2),
-                                    "Domare": row['ref_clean']
-                                })
+                                is_match = True
+                                display_val = f"H:{ph:.2f} B:{pa:.2f}"
                         else: # BLGM
                             pb = calculate_btts_prediction(h_team, a_team, hist_df)
                             if pb >= curr_thresh:
-                                found_bets.append({
-                                    "Datum": row['Speltid'],
-                                    "Match": f"{h_team} - {a_team}",
-                                    "BLGM Score": round(pb, 2),
-                                    "Liga": row['response.league.name']
-                                })
+                                is_match = True
+                                display_val = f"{pb:.2f}"
+                        
+                        if is_match:
+                            c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+                            with c1: st.write(f"**{h_team} - {a_team}**")
+                            with c2: st.write(f"Score: {display_val}")
+                            with c3: 
+                                odds_input = st.text_input("Odds", key=f"odds_{row['response.fixture.id']}", label_visibility="collapsed", placeholder="Odds")
+                            with c4:
+                                if st.button("SPELA", key=f"bet_{row['response.fixture.id']}"):
+                                    bet_entry = {
+                                        "Datum": row['Speltid'],
+                                        "Match": f"{h_team} - {a_team}",
+                                        "Typ": sim_mode,
+                                        "Score": display_val,
+                                        "Odds": odds_input if odds_input else "-",
+                                        "Status": "Öppen",
+                                        "FixtureID": row['response.fixture.id']
+                                    }
+                                    st.session_state.bet_history.append(bet_entry)
+                                    st.success("Sparad!")
+
+        with tab7:
+            st.header("📝 Spelhistorik")
+            if not st.session_state.bet_history:
+                st.info("Inga spel registrerade ännu.")
+            else:
+                # Uppdatera status på spel
+                for bet in st.session_state.bet_history:
+                    if bet['Status'] == "Öppen":
+                        match_res = df[df['response.fixture.id'] == bet['FixtureID']]
+                        if not match_res.empty and match_res.iloc[0]['response.fixture.status.short'] == 'FT':
+                            row = match_res.iloc[0]
+                            if bet['Typ'] == "🟨 Kort":
+                                win = (row['Gula kort Hemma'] >= 2 and row['Gula Kort Borta'] >= 2)
+                            else: # BLGM
+                                win = (row['response.goals.home'] > 0 and row['response.goals.away'] > 0)
+                            bet['Status'] = "✅ VINST" if win else "❌ FÖRLUST"
                 
-                if found_bets:
-                    st.success(f"Hittade {len(found_bets)} matcher som matchar din strategi!")
-                    st.dataframe(pd.DataFrame(found_bets), use_container_width=True)
-                else:
-                    st.info("Inga kommande matcher matchar dina kriterier just nu.")
+                st.dataframe(pd.DataFrame(st.session_state.bet_history).drop(columns=['FixtureID']), use_container_width=True)
 
 else:
     st.error("Kunde inte ladda data.")
