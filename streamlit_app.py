@@ -71,6 +71,7 @@ def get_odds_by_fixture_id(fixture_id):
         data = r.json()
         if not data.get('response') or len(data['response']) == 0: return res
         bookmakers = data['response'][0].get('bookmakers', [])
+        # BARA UNIBET (ID 11)
         bookie = next((b for b in bookmakers if b['id'] == 11), None)
         if bookie:
             for bet in bookie.get('bets', []):
