@@ -2,15 +2,18 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import os
 from datetime import datetime, timedelta
 
 # --- 1. KONFIGURATION (PERFEKT LAYOUT - RÖR EJ) ---
 st.set_page_config(page_title="Deep Stats Pro 2026", layout="wide")
 
+# FILNAMN FÖR DATABAS
+DB_FILE = "bet_history.csv"
+
 # Initiera session state
 if 'ai_threshold' not in st.session_state: st.session_state.ai_threshold = 2.5
 if 'btts_threshold' not in st.session_state: st.session_state.btts_threshold = 2.5
-if 'bet_history' not in st.session_state: st.session_state.bet_history = [] # Lista för lagda spel
 
 st.markdown("""
     <style>
@@ -54,7 +57,7 @@ STANDINGS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?forma
 API_KEY = "6343cd4636523af501b585a1b595ad26"
 API_BASE_URL = "https://v3.football.api-sports.io"
 
-# --- 2. DATAHANTERING ---
+# --- 2. DATAHANTERING & DATABAS ---
 @st.cache_data(ttl=60)
 def load_data(url):
     try:
@@ -63,9 +66,25 @@ def load_data(url):
         return data
     except: return None
 
+# --- DATABAS FUNKTIONER ---
+def load_db():
+    if os.path.exists(DB_FILE):
+        return pd.read_csv(DB_FILE)
+    else:
+        # Skapar tom struktur om filen inte finns
+        return pd.DataFrame(columns=["Datum", "Match", "Typ", "Score", "Odds", "Insats", "Status", "FixtureID"])
+
+def save_db(df):
+    df.to_csv(DB_FILE, index=False)
+
+def add_bet(row_data):
+    df = load_db()
+    new_row = pd.DataFrame([row_data])
+    df = pd.concat([df, new_row], ignore_index=True)
+    save_db(df)
+
 @st.cache_data(ttl=600)
 def get_odds_by_fixture_id(fixture_id):
-    """Hämtar odds från Unibet (ID 11) för tabellvyer."""
     res = {"corners": None, "cards": None, "btts": None}
     if not fixture_id or str(fixture_id) in ["0", "0.0", "nan"]: return res
     headers = {'x-rapidapi-host': "v3.football.api-sports.io", 'x-apisports-key': API_KEY}
@@ -701,6 +720,7 @@ if df is not None:
                 upcoming = df[(df['response.fixture.status.short'] == 'NS') & (df['datetime'] > now)].sort_values('datetime')
                 
                 with st.spinner("Scannar marknaden..."):
+                    found_count = 0
                     for idx, row in upcoming.iterrows():
                         hist_df = df[df['datetime'] < row['datetime']]
                         
@@ -721,43 +741,72 @@ if df is not None:
                                 display_val = f"{pb:.2f}"
                         
                         if is_match:
-                            c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+                            found_count += 1
+                            c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1])
                             with c1: st.write(f"**{h_team} - {a_team}**")
                             with c2: st.write(f"Score: {display_val}")
                             with c3: 
                                 odds_input = st.text_input("Odds", key=f"odds_{row['response.fixture.id']}", label_visibility="collapsed", placeholder="Odds")
                             with c4:
+                                stake_input = st.text_input("Insats", key=f"stake_{row['response.fixture.id']}", label_visibility="collapsed", placeholder="Summa")
+                            with c5:
                                 if st.button("SPELA", key=f"bet_{row['response.fixture.id']}"):
+                                    # Formatera odds (hantera komma)
+                                    final_odds = odds_input.replace(',', '.') if odds_input else "-"
+                                    
                                     bet_entry = {
                                         "Datum": row['Speltid'],
                                         "Match": f"{h_team} - {a_team}",
                                         "Typ": sim_mode,
                                         "Score": display_val,
-                                        "Odds": odds_input if odds_input else "-",
+                                        "Odds": final_odds,
+                                        "Insats": stake_input if stake_input else "0",
                                         "Status": "Öppen",
                                         "FixtureID": row['response.fixture.id']
                                     }
-                                    st.session_state.bet_history.append(bet_entry)
+                                    add_bet(bet_entry)
                                     st.success("Sparad!")
+                    
+                    if found_count == 0:
+                        st.info("Inga matcher matchar dina kriterier.")
 
         with tab7:
             st.header("📝 Spelhistorik")
-            if not st.session_state.bet_history:
+            
+            # Ladda historik
+            history_df = load_db()
+            
+            if history_df.empty:
                 st.info("Inga spel registrerade ännu.")
             else:
-                # Uppdatera status på spel
-                for bet in st.session_state.bet_history:
-                    if bet['Status'] == "Öppen":
-                        match_res = df[df['response.fixture.id'] == bet['FixtureID']]
+                # Automatisk rättning
+                updated = False
+                for index, row in history_df.iterrows():
+                    if row['Status'] == "Öppen":
+                        match_res = df[df['response.fixture.id'] == int(row['FixtureID'])]
                         if not match_res.empty and match_res.iloc[0]['response.fixture.status.short'] == 'FT':
-                            row = match_res.iloc[0]
-                            if bet['Typ'] == "🟨 Kort":
-                                win = (row['Gula kort Hemma'] >= 2 and row['Gula Kort Borta'] >= 2)
+                            res_row = match_res.iloc[0]
+                            win = False
+                            if row['Typ'] == "🟨 Kort":
+                                win = (res_row['Gula kort Hemma'] >= 2 and res_row['Gula Kort Borta'] >= 2)
                             else: # BLGM
-                                win = (row['response.goals.home'] > 0 and row['response.goals.away'] > 0)
-                            bet['Status'] = "✅ VINST" if win else "❌ FÖRLUST"
+                                win = (res_row['response.goals.home'] > 0 and res_row['response.goals.away'] > 0)
+                            
+                            history_df.at[index, 'Status'] = "✅ VINST" if win else "❌ FÖRLUST"
+                            updated = True
                 
-                st.dataframe(pd.DataFrame(st.session_state.bet_history).drop(columns=['FixtureID']), use_container_width=True)
+                if updated:
+                    save_db(history_df)
+                    st.rerun()
+
+                # Visa redigerbar tabell (för att kunna radera/ändra)
+                st.markdown("Du kan redigera värden eller radera rader (markera och tryck Delete).")
+                edited_df = st.data_editor(history_df, num_rows="dynamic", use_container_width=True, key="history_editor")
+                
+                # Spara om ändringar gjorts
+                if not edited_df.equals(history_df):
+                    save_db(edited_df)
+                    st.rerun()
 
 else:
     st.error("Kunde inte ladda data.")
