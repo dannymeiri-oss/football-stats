@@ -221,9 +221,9 @@ if df is not None:
             dummy_odd_corn = 2.25
 
             o1, o2, o3, o4 = st.columns(4)
-            o1.metric("Komb-odds (Ö1.5 Kort)", f"{comb_odds}")
+            o1.metric("Hörnor", f"{comb_odds}")
             o2.metric("BLGM Odds", f"{dummy_odd_btts}")
-            o3.metric("Hörnor Odds (Ö11.5)", f"{dummy_odd_corn}")
+            o3.metric("Gula kort", f"{dummy_odd_corn}")
             o4.metric(f"Domare ({referee_name if referee_name != 'Domare: Okänd' else 'Okänd'})", display_ref)
 
             # --- AI PREDICTIONS ---
@@ -279,7 +279,6 @@ if df is not None:
             goal_reason = f"**⚽ Målchanser:** "
             if btts_score > 2.6:
                 goal_reason += f"Båda lagen visar fin offensiv form samtidigt som försvaren läcker. BLGM (Båda lagen gör mål) ser statistiskt starkt ut."
-            # RÄTTELSE: Felet home_exp_goals berodde på felaktiga variabelnamn. Här är de fixade till h_scored/a_scored.
             elif h_scored > 2.0 and a_scored < 0.8:
                 goal_reason += f"Data pekar på en ensidig matchbild där {h_team} dominerar. Risken är att {a_team} får svårt att näta."
             else:
