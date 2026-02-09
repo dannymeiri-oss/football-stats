@@ -35,9 +35,6 @@ st.markdown("""
     .odds-label { font-size: 0.8rem; color: #666; margin-bottom: 2px; text-transform: uppercase; }
     .odds-value { font-size: 1.1rem; font-weight: bold; color: #2e7d32; }
     .ai-text-box { background-color: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196F3; margin: 15px 0; font-style: italic; color: #333; font-size: 0.95rem; line-height: 1.6; }
-    
-    /* JUSTERING FÖR ATT VISA FLERA ODDS SNYGGT */
-    .small-odds-text { font-size: 0.85rem !important; color: #2e7d32; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -62,8 +59,8 @@ def load_data(url):
 
 @st.cache_data(ttl=600)
 def get_odds_by_fixture_id(fixture_id):
-    """Hämtar odds direkt via fixture_id från API-Football."""
-    res = {"btts": "-", "corners": "-", "cards": "-", "debug": ""}
+    """Hämtar odds direkt via fixture_id från API-Football för BLGM och Hörnor."""
+    res = {"btts": "-", "corners": "-", "debug": ""}
     if not fixture_id or str(fixture_id) in ["0", "0.0", "nan"]: return res
 
     headers = {'x-rapidapi-host': "v3.football.api-sports.io", 'x-apisports-key': API_KEY}
@@ -80,29 +77,21 @@ def get_odds_by_fixture_id(fixture_id):
         
         if bookie:
             for bet in bookie.get('bets', []):
-                # 1. BLGM (ID 8)
+                # BLGM (ID 8)
                 if bet['id'] == 8:
                     for v in bet['values']:
                         if v['value'] == "Yes": res["btts"] = v['odd']
                 
-                # 2. HÖRNOR (ID 15) - LISTA ALLA LINOR
+                # HÖRNOR (ID 15) - List-logik
                 if bet['id'] == 15:
-                    corner_map = {v['value']: v['odd'] for v in bet['values'] if "Over" in v['value']}
-                    found_lines = []
+                    c_map = {v['value']: v['odd'] for v in bet['values'] if "Over" in v['value']}
+                    found_corners = []
                     for lina in ["8.5", "9.5", "10.5", "11.5", "12.5"]:
                         key = f"Over {lina}"
-                        if key in corner_map:
-                            found_lines.append(f"Ö{lina}: {corner_map[key]}")
-                    if found_lines:
-                        res["corners"] = " | ".join(found_lines)
-                
-                # 3. KORT (ID 45) - STRIKT KONTROLL
-                if bet['id'] == 45:
-                    card_map = {v['value']: v['odd'] for v in bet['values'] if "Over" in v['value']}
-                    for line in ["Over 3.5", "Over 4.5", "Over 2.5", "Over 5.5"]:
-                        if line in card_map:
-                            res["cards"] = f"{card_map[line]} ({line.replace('Over ', 'Ö')})"
-                            break
+                        if key in c_map:
+                            found_corners.append(f"Ö{lina}: {c_map[key]}")
+                    if found_corners:
+                        res["corners"] = " | ".join(found_corners)
     except: pass
     return res
 
@@ -275,11 +264,10 @@ if df is not None:
             # --- HÄMTA ODDS ---
             odds_data = get_odds_by_fixture_id(m['response.fixture.id'])
 
-            o1, o2, o3, o4 = st.columns([1, 1, 1.5, 1])
-            o1.metric("Marknads-odds (Kort)", odds_data["cards"])
-            o2.metric("BLGM Odds", odds_data["btts"])
-            o3.metric("Hörnor Odds", odds_data["corners"])
-            o4.metric(f"Domare ({referee_name if referee_name != 'Domare: Okänd' else 'Okänd'})", display_ref)
+            o1, o2, o3 = st.columns([1, 1, 2])
+            o1.metric("BLGM Odds", odds_data["btts"])
+            o2.metric(f"Domare ({referee_name if referee_name != 'Domare: Okänd' else 'Okänd'})", display_ref)
+            o3.metric("Hörnor Odds (Lista)", odds_data["corners"])
 
             # --- AI PREDICTIONS ---
             st.markdown("<div class='section-header'>🤖 DEEP STATS AI PREDICTION (L20)</div>", unsafe_allow_html=True)
@@ -323,23 +311,11 @@ if df is not None:
             c2.metric("TOTALT (xCards)", f"{total_cards_pred:.2f}")
             c3.metric("Bortalag (xCards)", f"{a_card_pred:.2f}")
             
-            # Kort-boxar
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                st.markdown(f"<div class='odds-label'>Marknads Odds</div><div class='odds-value'>{odds_data['cards']}</div>", unsafe_allow_html=True)
-                if h_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
-                else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {h_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
-            with col_b2:
-                st.markdown(f"<div class='odds-label'>Marknads Odds</div><div class='odds-value'>{odds_data['cards']}</div>", unsafe_allow_html=True)
-                if a_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
-                else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
-
             stat_comparison_row("AI HÖRNOR PREDIKTION", h_corn_avg, a_corn_avg)
             
             # Hörn-boxar
             col_c1, col_c2 = st.columns(2)
             with col_c1:
-                st.markdown(f"<div class='odds-label'>Marknads Odds</div><div class='odds-value'>{odds_data['corners']}</div>", unsafe_allow_html=True)
                 if h_corn_avg >= 5.5: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {h_team} UNDER 5.5 HÖRNOR</div>", unsafe_allow_html=True)
             with col_c2:
@@ -358,6 +334,21 @@ if df is not None:
             stat_comparison_row("GULA KORT / MATCH", h_hist['Gula kort Hemma'].mean(), a_hist['Gula Kort Borta'].mean(), precision=1)
             stat_comparison_row("RÖDA KORT / MATCH", h_hist['Röda kort Hemma'].mean(), h_hist['Röda kort Borta'].mean(), precision=2)
 
+            st.markdown("<br>### ⚔️ Senaste inbördes möten", unsafe_allow_html=True)
+            h2h = df[((df['response.teams.home.name'] == h_team) & (df['response.teams.away.name'] == a_team)) | 
+                     ((df['response.teams.home.name'] == a_team) & (df['response.teams.away.name'] == h_team))]
+            h2h = h2h[h2h['response.fixture.status.short'] == 'FT'].sort_values('datetime', ascending=False)
+            if not h2h.empty:
+                h2h_display = h2h.rename(columns={'response.teams.home.name': 'Hemmalag', 'response.teams.away.name': 'Bortalag', 'response.goals.home': 'Mål H', 'response.goals.away': 'Mål B'})
+                st.dataframe(h2h_display[['Speltid', 'Hemmalag', 'Mål H', 'Mål B', 'Bortalag']], use_container_width=True, hide_index=True)
+
+        elif st.session_state.view_mode == "match_detail":
+            st.markdown("<h2 style='text-align:center; color:#ddd; margin-bottom:20px;'>MATCH STATISTICS</h2>", unsafe_allow_html=True)
+            stats_to_show = [("Ball Possession", 'Bollinnehav Hemma', 'Bollinnehav Borta', True), ("Shot on Target", 'Skott på mål Hemma', 'Skott på mål Borta', False), ("Expected Goals (xG)", 'xG Hemma', 'xG Borta', False), ("Pass Accuracy", 'Passningssäkerhet Hemma', 'Passningssäkerhet Borta', True), ("Corner Kicks", 'Hörnor Hemma', 'Hörnor Borta', False), ("Fouls", 'Fouls Hemma', 'Fouls Borta', False), ("Yellow Cards", 'Gula kort Hemma', 'Gula Kort Borta', False)]
+            for label, h_col, a_col, is_pct in stats_to_show:
+                h_val, a_val = m[h_col], m[a_col]
+                suffix = "%" if is_pct else ""
+                st.markdown(f'<div style="display: flex; justify-content: center; align-items: center; margin-bottom: 10px;"><div style="width: 80px; text-align: right; font-size: 1.4rem; font-weight: bold; color: black; padding-right: 15px;">{h_val}{suffix}</div><div style="width: 220px; background: #e63946; color: white; text-align: center; padding: 6px; font-weight: bold; font-size: 0.85rem; border-radius: 2px; text-transform: uppercase;">{label}</div><div style="width: 80px; text-align: left; font-size: 1.4rem; font-weight: bold; color: black; padding-left: 15px;">{a_val}{suffix}</div></div>', unsafe_allow_html=True)
     else:
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["📅 Matchcenter", "🛡️ Laganalys", "⚖️ Domaranalys", "🏆 Tabell", "📊 Topplista"])
         with tab1:
