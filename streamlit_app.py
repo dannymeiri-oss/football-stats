@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import requests
 from datetime import datetime, timedelta
 
 # --- 1. KONFIGURATION (PERFEKT LAYOUT - RÖR EJ) ---
@@ -35,9 +34,6 @@ st.markdown("""
     .odds-label { font-size: 0.8rem; color: #666; margin-bottom: 2px; text-transform: uppercase; }
     .odds-value { font-size: 1.1rem; font-weight: bold; color: #2e7d32; }
     .ai-text-box { background-color: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 5px solid #2196F3; margin: 15px 0; font-style: italic; color: #333; font-size: 0.95rem; line-height: 1.6; }
-    
-    /* ODDS TABELL STYLING */
-    .odds-table-header { font-weight: bold; text-align: center; background-color: #f0f0f0; padding: 5px; border-radius: 4px; margin-bottom: 5px; font-size: 0.85rem; color: #333; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -46,8 +42,6 @@ st.markdown("<h1 class='main-title'>Deep Stats Pro 2026</h1>", unsafe_allow_html
 SHEET_ID = "1eHU1H7pqNp_kOoMqbhrL6Cxc2bV7A0OV-EOxTItaKlw"
 RAW_DATA_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
 STANDINGS_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=712668345"
-API_KEY = "6343cd4636523af501b585a1b595ad26"
-API_BASE_URL = "https://v3.football.api-sports.io"
 
 # --- 2. DATAHANTERING ---
 @st.cache_data(ttl=60)
@@ -57,77 +51,6 @@ def load_data(url):
         data.columns = [col.strip() for col in data.columns]
         return data
     except: return None
-
-@st.cache_data(ttl=600)
-def get_odds_by_fixture_id(fixture_id):
-    """Hämtar odds och returnerar DataFrame-objekt för tabeller (ENDAST UNIBET)."""
-    res = {"corners": None, "cards": None, "btts": None}
-    
-    if not fixture_id or str(fixture_id) in ["0", "0.0", "nan"]:
-        return res
-
-    headers = {'x-rapidapi-host': "v3.football.api-sports.io", 'x-apisports-key': API_KEY}
-    
-    try:
-        fid = str(int(float(fixture_id)))
-        url = f"{API_BASE_URL}/odds?fixture={fid}"
-        
-        r = requests.get(url, headers=headers, timeout=5)
-        data = r.json()
-        
-        if not data.get('response') or len(data['response']) == 0:
-            return res
-            
-        bookmakers = data['response'][0].get('bookmakers', [])
-        # BARA UNIBET (ID 11)
-        bookie = next((b for b in bookmakers if b['id'] == 11), None)
-        
-        if bookie:
-            for bet in bookie.get('bets', []):
-                
-                # --- HÖRNOR (ID 15) ---
-                if bet['id'] == 15:
-                    vals = bet['values']
-                    # Hitta unika linor (t.ex. 8.5, 9.5) och sortera dem
-                    lines = sorted(list(set([v['value'].split(' ')[1] for v in vals if ' ' in v['value']])), key=float)
-                    
-                    table = []
-                    for L in lines:
-                        o = next((v['odd'] for v in vals if v['value'] == f"Over {L}"), "-")
-                        u = next((v['odd'] for v in vals if v['value'] == f"Under {L}"), "-")
-                        table.append({"Lina": L, "Över": o, "Exakt": "-", "Under": u})
-                    
-                    if table:
-                        res["corners"] = pd.DataFrame(table)
-
-                # --- KORT (ID 45) ---
-                if bet['id'] == 45:
-                    vals = bet['values']
-                    lines = sorted(list(set([v['value'].split(' ')[1] for v in vals if ' ' in v['value']])), key=float)
-                    
-                    table = []
-                    for L in lines:
-                        o = next((v['odd'] for v in vals if v['value'] == f"Over {L}"), "-")
-                        u = next((v['odd'] for v in vals if v['value'] == f"Under {L}"), "-")
-                        table.append({"Lina": L, "Över": o, "Exakt": "-", "Under": u})
-                    
-                    if table:
-                        res["cards"] = pd.DataFrame(table)
-
-                # --- BLGM (ID 8) ---
-                if bet['id'] == 8:
-                    btts_data = []
-                    for v in bet['values']:
-                        label = "JA" if v['value'] == "Yes" else "NEJ"
-                        btts_data.append({"Val": label, "Odds": v['odd']})
-                    
-                    if btts_data:
-                        res["btts"] = pd.DataFrame(btts_data)
-
-    except Exception:
-        pass
-        
-    return res
 
 def get_team_pos(team_name, league_name, standings):
     if standings is None or team_name is None: return ""
@@ -212,16 +135,12 @@ def clean_stats(data):
         'response.goals.home', 'response.goals.away',
         'Skott utanför Hemma', 'Skott utanför Borta', 'Blockerade skott Hemma', 'Blockerade skott Borta',
         'Skott i straffområdet Hemma', 'Skott i straffområdet Borta', 'Skott utanför straffområdet Hemma', 'Skott utanför straffområdet Borta',
-        'Passningar totalt Hemma', 'Passningar totalt Borta',
-        'response.fixture.id'
+        'Passningar totalt Hemma', 'Passningar totalt Borta'
     ]
     for col in needed_cols:
         if col not in data.columns: data[col] = 0.0
         else:
-            if col == 'response.fixture.id':
-                data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0)
-            else:
-                data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
+            data[col] = pd.to_numeric(data[col].astype(str).str.replace('%', '').str.replace(',', '.').str.replace(r'[^0-9.]', '', regex=True), errors='coerce').fillna(0.0)
     data['ref_clean'] = data.get('response.fixture.referee', "Okänd").apply(format_referee)
     data['Speltid'] = data['datetime'].dt.strftime('%d %b %Y')
     return data
@@ -295,35 +214,17 @@ if df is not None:
                     ref_avg_val = (ref_last_10['Gula kort Hemma'].sum() + ref_last_10['Gula Kort Borta'].sum()) / len(ref_last_10)
                     display_ref = f"{ref_avg_val:.2f}"
             
-            # --- ODDS TABELLER (NY SEKTION) ---
-            st.markdown("<br><div class='section-header'>📊 MARKNADSODDS (UNIBET)</div>", unsafe_allow_html=True)
-            
-            # Hämta odds
-            odds_dfs = get_odds_by_fixture_id(m.get('response.fixture.id'))
-            
-            # Skapa 3 kolumner för tabellerna
-            oc1, oc2, oc3 = st.columns(3)
-            
-            with oc1:
-                st.markdown("<div class='odds-table-header'>🚩 Corners Over/Under</div>", unsafe_allow_html=True)
-                if odds_dfs["corners"] is not None:
-                    st.dataframe(odds_dfs["corners"], hide_index=True, use_container_width=True)
-                else:
-                    st.info("Inga odds")
-            
-            with oc2:
-                st.markdown("<div class='odds-table-header'>🟨 Cards Over/Under</div>", unsafe_allow_html=True)
-                if odds_dfs["cards"] is not None:
-                    st.dataframe(odds_dfs["cards"], hide_index=True, use_container_width=True)
-                else:
-                    st.info("Inga odds")
-            
-            with oc3:
-                st.markdown("<div class='odds-table-header'>⚽ Both Teams Score</div>", unsafe_allow_html=True)
-                if odds_dfs["btts"] is not None:
-                    st.dataframe(odds_dfs["btts"], hide_index=True, use_container_width=True)
-                else:
-                    st.info("Inga odds")
+            # Dummies för odds
+            d_odd_h, d_odd_a = 1.85, 2.10
+            comb_odds = round(d_odd_h * d_odd_a, 2)
+            dummy_odd_btts = 1.70
+            dummy_odd_corn = 2.25
+
+            o1, o2, o3, o4 = st.columns(4)
+            o1.metric("Hörnor", f"{comb_odds}")
+            o2.metric("BLGM Odds", f"{dummy_odd_btts}")
+            o3.metric("Gula kort", f"{dummy_odd_corn}")
+            o4.metric(f"Domare ({referee_name if referee_name != 'Domare: Okänd' else 'Okänd'})", display_ref)
 
             # --- AI PREDICTIONS ---
             st.markdown("<div class='section-header'>🤖 DEEP STATS AI PREDICTION (L20)</div>", unsafe_allow_html=True)
@@ -395,13 +296,11 @@ if df is not None:
             # Kort-boxar
             col_b1, col_b2 = st.columns(2)
             with col_b1:
-                # OBS: Här används fortfarande 'odds-label' klassen, men vi hårdkodar inte oddset utan lämnar det som exempel eller tar bort om du vill
-                # För att inte röra layouten behåller jag strukturen
-                st.markdown(f"<div class='odds-label'>Kort Prognos</div>", unsafe_allow_html=True) 
+                st.markdown(f"<div class='odds-label'>Unibet Odds Ö1.5 Kort</div><div class='odds-value'>{d_odd_h}</div>", unsafe_allow_html=True)
                 if h_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {h_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {h_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
             with col_b2:
-                st.markdown(f"<div class='odds-label'>Kort Prognos</div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='odds-label'>Unibet Odds Ö1.5 Kort</div><div class='odds-value'>{d_odd_a}</div>", unsafe_allow_html=True)
                 if a_card_pred >= 2.0: st.markdown(f"<div class='bet-box good-bet'>✅ BRA SPEL: {a_team} ÖVER 2.0 KORT</div>", unsafe_allow_html=True)
                 else: st.markdown(f"<div class='bet-box bad-bet'>❌ SKIPPA: {a_team} UNDER 2.0 KORT</div>", unsafe_allow_html=True)
 
